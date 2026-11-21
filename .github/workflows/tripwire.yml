@@ -1,0 +1,23 @@
+name: tripwire
+on: [push, pull_request]
+jobs:
+  detection-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+      - name: Pull sensor images
+        run: docker pull jasonish/suricata:latest && docker pull zeek/zeek:latest
+      - name: Detection regression suite (benign gate, recall, tuning band)
+        run: python -m tripwire test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tripwire-results
+          path: |
+            out/dashboard.html
+            out/REPORT.md
+            out/attack_navigator_layer.json

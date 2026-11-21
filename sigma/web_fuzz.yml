@@ -1,0 +1,28 @@
+title: Web Wordlist Fuzzing - 404 Burst From One Client
+id: 5b1f3c0e-7a61-4b52-9d6a-0c1d2e3f4a02
+status: experimental
+description: >
+  Log-based twin of the Tripwire network rule for T1595.003. A burst of HTTP 404
+  responses to one client is the signature of a wordlist scanner such as ffuf or gobuster.
+references:
+  - detections/catalog.yml
+author: Tripwire team
+date: 2026/11/21
+tags:
+  - attack.reconnaissance
+  - attack.t1595.003
+logsource:
+  category: webserver
+detection:
+  selection:
+    sc-status: 404
+  timeframe: 10s
+  condition: selection | count() by c-ip > 15
+fields:
+  - c-ip
+  - cs-uri-stem
+  - cs-user-agent
+falsepositives:
+  - A developer reloading a page with several missing assets
+  - A broken link checker run by the site owner
+level: medium

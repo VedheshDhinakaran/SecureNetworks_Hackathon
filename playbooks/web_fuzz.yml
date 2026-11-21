@@ -1,0 +1,31 @@
+class: web_fuzz
+impact: {fn: hidden_paths_found}
+hypotheses:
+  - id: web-hidden-paths-exposed
+    weight: 9
+    cause: "Sensitive paths (for example /admin and /backup) are reachable by anyone and directory listing is on"
+    tests:
+      - {kind: evidence, fn: hidden_paths_exposed}
+      - {kind: config_regex, file: default.conf, pattern: 'autoindex\s+on', present_is_bad: true}
+    mitigation: M1050
+    fix:
+      immediate: "Review the discovered paths for exposed data; take sensitive content offline."
+      short_term: "Turn off autoindex and restrict /admin to the management subnet (allow/deny)."
+      long_term: "Keep backups and admin interfaces off the public web root; add authentication."
+    snippet:
+      - {op: replace, file: default.conf, old: "autoindex on;", new: "autoindex off;"}
+      - {op: replace, file: default.conf, old: "location /admin {", new: "location /admin {\n        allow 10.0.3.0/24;\n        deny all;"}
+  - id: web-no-rate-limit
+    weight: 7
+    cause: "The web server does not rate limit clients, so thousands of guesses per minute are accepted"
+    tests:
+      - {kind: config_regex, file: default.conf, pattern: 'limit_req', present_is_bad: false}
+    mitigation: M1037
+    fix:
+      immediate: "Throttle the offending client at the proxy or firewall."
+      short_term: "Enable nginx limit_req with a modest burst."
+      long_term: "Put a WAF with bot and enumeration rules in front of the site."
+    snippet:
+      - {op: prepend, file: default.conf, content: "limit_req_zone $binary_remote_addr zone=perip:10m rate=10r/s;\n"}
+      - {op: replace, file: default.conf, old: "    location / {", new: "    location / {\n        limit_req zone=perip burst=20 nodelay;"}
+  - use: flat-network

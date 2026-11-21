@@ -1,0 +1,38 @@
+class: smb_admin
+impact: {fn: smb_admin_reached}
+hypotheses:
+  - id: smb-admin-share-exposed
+    weight: 10
+    cause: "An administrative-style share (C$) is configured on the file server and writable"
+    tests:
+      - {kind: section_exists, file: smb.conf, section: "C$"}
+      - {kind: evidence, fn: smb_admin_reached}
+    mitigation: M1042
+    fix:
+      immediate: "Block the source and check the share for modified or copied files."
+      short_term: "Remove the [C$] share definition; expose only named, least-privilege shares."
+      long_term: "Disable administrative shares where unused and audit share creation."
+    snippet: [{op: remove_section, file: smb.conf, section: "C$"}]
+  - id: smb-no-host-restriction
+    weight: 8
+    cause: "Samba accepts connections from any host (no 'hosts allow' restriction)"
+    tests:
+      - {kind: config, file: smb.conf, section: global, key: "hosts allow", missing_is_bad: true, bad: []}
+    mitigation: M1035
+    fix:
+      immediate: "Restrict SMB at the firewall to the user subnet."
+      short_term: "Add 'hosts allow = 10.0.2.0/24 10.0.3.0/24' to [global]."
+      long_term: "Segment file servers away from user workstations; allow SMB only from approved subnets."
+    snippet: [{op: set, file: smb.conf, section: global, key: "hosts allow", value: "10.0.2.0/24 10.0.3.0/24"}]
+  - id: smb-signing-optional
+    weight: 5
+    cause: "SMB signing is not required, so sessions can be tampered with or relayed"
+    tests:
+      - {kind: config, file: smb.conf, section: global, key: "server signing", default: "auto", bad: ["auto", "disabled", "if_required"]}
+    mitigation: M1054
+    fix:
+      immediate: "Require signing on all clients where possible."
+      short_term: "Set 'server signing = mandatory' in [global]."
+      long_term: "Enforce SMB3 with encryption for sensitive shares."
+    snippet: [{op: set, file: smb.conf, section: global, key: "server signing", value: "mandatory"}]
+  - use: flat-network

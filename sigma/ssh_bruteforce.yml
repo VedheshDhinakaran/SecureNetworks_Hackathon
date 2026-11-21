@@ -1,0 +1,29 @@
+title: SSH Password Guessing From One Source
+id: 5b1f3c0e-7a61-4b52-9d6a-0c1d2e3f4a01
+status: experimental
+description: >
+  Log-based twin of the Tripwire network rule for T1110.001. Many failed SSH password
+  attempts from one address in a short time. Works from sshd auth logs, so it still sees
+  attacks the encrypted network traffic cannot describe (success or failure).
+references:
+  - detections/catalog.yml
+author: Tripwire team
+date: 2026/11/21
+tags:
+  - attack.credential_access
+  - attack.t1110.001
+logsource:
+  product: linux
+  service: auth
+detection:
+  selection:
+    message|contains: 'Failed password for'
+  timeframe: 1m
+  condition: selection | count() by src_ip > 5
+fields:
+  - src_ip
+  - user
+falsepositives:
+  - Users mistyping a password a few times
+  - Vulnerability scanners run by the security team
+level: high

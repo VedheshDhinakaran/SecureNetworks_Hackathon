@@ -1,0 +1,32 @@
+title: SMB Administrative Share Access (Zeek)
+id: 5b1f3c0e-7a61-4b52-9d6a-0c1d2e3f4a03
+status: experimental
+description: >
+  Log-based twin of the Tripwire network rule for T1021.002. A tree-connect to C$, D$, E$
+  or ADMIN$ seen in Zeek smb_mapping.log. IPC$ is excluded because it is routine.
+references:
+  - detections/catalog.yml
+author: Tripwire team
+date: 2026/11/21
+tags:
+  - attack.lateral_movement
+  - attack.t1021.002
+logsource:
+  product: zeek
+  service: smb_mapping
+detection:
+  selection:
+    path|endswith:
+      - '\ADMIN$'
+      - '\C$'
+      - '\D$'
+      - '\E$'
+  condition: selection
+fields:
+  - id.orig_h
+  - id.resp_h
+  - path
+falsepositives:
+  - Authorised administrators using admin shares from the management subnet (filter by source)
+  - Backup or software-deployment agents that legitimately use admin shares
+level: high

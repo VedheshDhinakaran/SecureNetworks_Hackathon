@@ -1,0 +1,33 @@
+title: TCP Port Scan - Many Unanswered SYNs From One Source (Zeek)
+id: 5b1f3c0e-7a61-4b52-9d6a-0c1d2e3f4a04
+status: experimental
+description: >
+  Log-based twin of the Tripwire network rule for T1046. Many connections from one source
+  that were rejected or never answered, seen in Zeek conn.log.
+references:
+  - detections/catalog.yml
+author: Tripwire team
+date: 2026/11/21
+tags:
+  - attack.discovery
+  - attack.t1046
+logsource:
+  product: zeek
+  service: conn
+detection:
+  selection:
+    proto: tcp
+    conn_state:
+      - 'S0'
+      - 'REJ'
+      - 'RSTOS0'
+  timeframe: 5s
+  condition: selection | count() by id.orig_h > 30
+fields:
+  - id.orig_h
+  - id.resp_h
+  - id.resp_p
+falsepositives:
+  - Authorised vulnerability scanners and asset-discovery tools
+  - Monitoring systems polling many ports (allowlist by source)
+level: medium

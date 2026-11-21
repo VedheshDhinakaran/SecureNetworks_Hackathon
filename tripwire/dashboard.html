@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tripwire Detection Platform</title>
+<style>
+:root{--bg:#0b1020;--panel:#121a2e;--panel2:#172036;--line:#243049;--text:#e6ebf5;--mute:#8b97b3;--ok:#35c27a;--warn:#e7b341;--bad:#ef5b5b;--accent:#5aa2ff;--violet:#9b8cff;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#101830,#0b1020)}
+h1{margin:0;font-size:20px;letter-spacing:.3px}h1 small{color:var(--mute);font-weight:400;font-size:12px;margin-left:8px}
+h2{font-size:15px;margin:0 0 10px}h3{font-size:13px;margin:14px 0 6px;color:var(--mute);text-transform:uppercase;letter-spacing:.6px}
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--line);background:var(--panel2)}
+.ok{color:var(--ok);border-color:#1f5d3d}.warn{color:var(--warn);border-color:#6b5217}.bad{color:var(--bad);border-color:#6b2424}.acc{color:var(--accent);border-color:#244a7a}
+nav{display:flex;gap:4px;padding:0 24px;border-bottom:1px solid var(--line);overflow-x:auto;background:#0e1527}
+nav button{background:none;border:0;color:var(--mute);padding:11px 14px;font:inherit;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+nav button.on{color:var(--text);border-color:var(--accent)}
+main{padding:22px 24px;max-width:1280px;margin:0 auto}
+.grid{display:grid;gap:14px}.g4{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}.g2{grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.kpi b{display:block;font-size:26px;letter-spacing:.3px}.kpi span{color:var(--mute);font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+.mono{font-family:var(--mono);font-size:12px}.mute{color:var(--mute)}
+.chain{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.chain i{color:var(--mute);font-style:normal}
+.step{padding:5px 11px;border-radius:7px;background:var(--panel2);border:1px solid var(--line);font-size:12px}
+.bar{height:8px;border-radius:5px;background:var(--panel2);overflow:hidden}.bar>div{height:100%}
+.cell{display:inline-block;min-width:60px;text-align:center;padding:3px 8px;border-radius:5px;font-size:12px;font-weight:600}
+.c1{background:#16452c;color:#7be3aa}.c0{background:#4a1f1f;color:#ff9a9a}.cn{background:#1c2438;color:var(--mute)}
+details{border:1px solid var(--line);border-radius:10px;background:var(--panel);margin-bottom:12px}
+summary{cursor:pointer;padding:13px 16px;list-style:none;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+summary::-webkit-details-marker{display:none}.body{padding:4px 16px 16px;border-top:1px solid var(--line)}
+.cause{border-left:3px solid var(--accent);padding:8px 12px;margin:10px 0;background:var(--panel2);border-radius:0 8px 8px 0}
+.cause ul{margin:6px 0 0;padding-left:18px;color:var(--mute)}.cause li{margin:2px 0}
+.tier{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;margin-top:8px;font-size:13px}.tier b{color:var(--violet)}
+select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font:inherit}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 18px}.flow .step{font-weight:600}
+.legend span{margin-right:14px;font-size:12px;color:var(--mute)}
+svg text{fill:var(--mute);font:11px system-ui}.hide{display:none}
+@media(max-width:600px){main{padding:14px 12px}header{padding:12px}.g2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Tripwire <small>detect &rarr; correlate &rarr; explain &rarr; fix &rarr; verify</small></h1>
+  <div id="top" class="chain"></div>
+</header>
+<nav id="nav"></nav>
+<main id="main"></main>
+<script>
+window.__STATE__ = /*__STATE__*/null;
+let S = window.__STATE__;
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pct = v => v == null ? '-' : Math.round(v * 100) + '%';
+const time = t => new Date(t * 1000).toISOString().substr(11, 8);
+const sev = r => r >= 9 ? 'bad' : r >= 7 ? 'warn' : r >= 4 ? 'acc' : 'ok';
+const TABS = [['overview','Overview'],['incidents','Incidents'],['rca','Root cause & fix'],['quality','Quality'],['robust','Robustness'],['evasion','Evasion'],['coverage','ATT&CK coverage'],['alerts','Alerts']];
+let tab = 'overview', selInc = null;
+
+function renderTop() {
+  const g = S.gate || [], pass = g.every(x => x.ok), h = S.health;
+  $('#top').innerHTML =
+    (window.__LIVE__ ? '<span class="pill bad">&#9679; LIVE</span>' : '') +
+    `<span class="pill ${pass ? 'ok' : 'bad'}">Gate ${pass ? 'PASS' : 'FAIL'}</span>` +
+    (h ? `<span class="pill ${h.overall === 'green' ? 'ok' : h.overall === 'amber' ? 'warn' : 'bad'}">Detections ${h.overall === 'green' ? 'healthy' : h.overall}</span>` : '') +
+    (S.engines || []).map(e => `<span class="pill acc">${esc(e)}</span>`).join('');
+}
+function renderNav() {
+  $('#nav').innerHTML = TABS.map(([k, l]) => `<button class="${k === tab ? 'on' : ''}" onclick="go('${k}')">${l}</button>`).join('');
+}
+function go(k) { tab = k; render(); }
+
+// ---------- overview
+function overview() {
+  const ens = S.score.engines.ensemble, cls = Object.keys(ens);
+  const rec = cls.reduce((a, c) => a + (ens[c].recall || 0), 0) / cls.length;
+  const fp = cls.reduce((a, c) => a + ens[c].fp_alerts, 0);
+  const ttds = cls.map(c => ens[c].ttd_median_s).filter(x => x != null);
+  const ttd = ttds.length ? Math.max(...ttds) : null;
+  const k = [[pct(rec), 'attack recall (core captures)'], [fp, `false alerts on ${S.score.neg_pcaps} benign / hard-negative captures`],
+    [S.incidents.length, 'incidents after correlation'], [S.dataset.pcaps, `labelled captures (${S.dataset.benign_minutes} min benign)`],
+    [ttd == null ? '-' : ttd + ' s', 'slowest median time to detect']];
+  const av = Object.entries(S.availability).map(([e, v]) => `<span class="pill ${v === 'ok' ? 'ok' : 'warn'}" title="${esc(v)}">${esc(e)}: ${v === 'ok' ? 'ready' : esc(v)}</span>`).join(' ');
+  const hl = S.health ? Object.entries(S.health.classes).map(([c, v]) => `<tr><td>${esc(c)}</td><td><span class="pill ${v.status === 'green' ? 'ok' : v.status === 'amber' ? 'warn' : 'bad'}">${v.status}</span></td><td class="mute">${Object.entries(v.engines).map(([e, x]) => e + (x ? ' &#10003;' : ' &#10007;')).join(' &middot; ')}</td></tr>`).join('') : '';
+  const ag = {};
+  S.agreement.forEach(r => { (ag[r.class] = ag[r.class] || []).push(r); });
+  const agr = Object.entries(ag).map(([c, rows]) => `<tr><td>${esc(c)}</td>${S.engines.map(e => `<td>${rows.every(r => r.engines[e]) ? '<span class="cell c1">&#10003;</span>' : '<span class="cell c0">&#10007;</span>'}</td>`).join('')}</tr>`).join('');
+  $('#main').innerHTML = `
+  <div class="flow"><span class="step">1 Detect</span><i class="mute">&rarr;</i><span class="step">2 Correlate</span><i class="mute">&rarr;</i><span class="step">3 Explain root cause</span><i class="mute">&rarr;</i><span class="step">4 Fix</span><i class="mute">&rarr;</i><span class="step">5 Verify</span></div>
+  <div class="grid g4">${k.map(([v, l]) => `<div class="card kpi"><b>${v}</b><span>${l}</span></div>`).join('')}</div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><h2>Acceptance gate</h2><table>${S.gate.map(g => `<tr><td style="width:60px"><span class="pill ${g.ok ? 'ok' : 'bad'}">${g.ok ? 'PASS' : 'FAIL'}</span></td><td>${esc(g.name)}<div class="mute">${esc(g.detail)}</div></td></tr>`).join('')}</table></div>
+    <div class="card"><h2>Sensors</h2><p>${av}</p>
+      <h3>Engine agreement (core attacks)</h3><table><tr><th>Class</th>${S.engines.map(e => `<th>${esc(e)}</th>`).join('')}</tr>${agr}</table>
+      ${hl ? `<h3>Self-validation canaries</h3><table>${hl}</table>` : ''}</div>
+  </div>
+  <p class="mute" style="margin-top:14px">Generated ${esc(S.generated)} in ${S.runtime_s}s. Every number on this page is computed from labelled traffic, not typed by hand.</p>`;
+}
+
+// ---------- incidents
+function timeline(inc) {
+  const W = 860, rowH = 28, t0 = inc.start, span = Math.max(1, inc.end - inc.start), pad = 150;
+  const rows = inc.stages.map((s, i) => {
+    const x = pad + (s.first_ts - t0) / span * (W - pad - 20), w = Math.max(8, (s.last_ts - s.first_ts) / span * (W - pad - 20));
+    return `<text x="0" y="${i * rowH + 18}" style="fill:var(--text)">${esc(s.title.length > 22 ? s.title.slice(0, 21) + '…' : s.title)}</text>
+      <rect x="${x}" y="${i * rowH + 6}" width="${w}" height="16" rx="4" fill="${s.confidence === 'high' ? '#35c27a' : '#5aa2ff'}"/>
+      <text x="${Math.min(x + w + 6, W - 80)}" y="${i * rowH + 18}">${time(s.first_ts)} &middot; ${s.count} alerts</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${inc.stages.length * rowH + 8}" width="100%" role="img" aria-label="kill chain timeline">${rows}</svg>
+    <div class="legend"><span style="color:var(--ok)">&#9632; confirmed by two sensors</span><span style="color:var(--accent)">&#9632; one sensor</span></div>`;
+}
+function incidents() {
+  if (!S.incidents.length) { $('#main').innerHTML = '<div class="card">No incidents yet.</div>'; return; }
+  $('#main').innerHTML = S.incidents.map((i, n) => {
+    const plan = (S.response || []).find(p => p.incident === i.id);
+    return `<details ${n === 0 ? 'open' : ''}><summary>
+      <b class="mono">${esc(i.id)}</b><span class="pill ${sev(i.risk)}">${esc(i.severity)} &middot; risk ${i.risk}</span>
+      <span class="mono">${esc(i.src)}</span><span class="mute">${esc(i.summary)}</span></summary>
+      <div class="body"><h3>Kill chain</h3>${timeline(i)}
+      <h3>Stages</h3><table><tr><th>When</th><th>Stage</th><th>Technique</th><th>Sensors</th><th>Layer</th><th>Confidence</th></tr>
+      ${i.stages.map(s => `<tr><td class="mono">${time(s.first_ts)}</td><td>${esc(s.title)}</td><td class="mono">${esc(s.technique)}</td><td>${s.sensors.join(', ')}</td><td>${s.layers.join(', ')}</td><td><span class="pill ${s.confidence === 'high' ? 'ok' : 'acc'}">${s.confidence}</span></td></tr>`).join('')}</table>
+      ${plan ? `<h3>Response plan (${esc(plan.mode)})</h3>${plan.actions.map(a => `<div class="mono">${a.type === 'skip' ? '# skipped: ' + esc(a.reason) : esc(a.rule)}</div><div class="mute" style="margin-bottom:6px">${esc(a.reason)}</div>`).join('')}` : ''}
+      <p><button class="pill acc" style="cursor:pointer" onclick="selInc='${i.id}';go('rca')">View root cause &amp; fix &rarr;</button></p></div></details>`;
+  }).join('');
+}
+
+// ---------- root cause
+const LV = {confirmed: 'ok', probable: 'warn', none: 'acc', unknown: 'acc'};
+function rca() {
+  const ids = Object.keys(S.rca);
+  if (!ids.length) { $('#main').innerHTML = '<div class="card">No root-cause analyses yet.</div>'; return; }
+  selInc = selInc && S.rca[selInc] ? selInc : ids[0];
+  const r = S.rca[selInc], inc = S.incidents.find(i => i.id === selInc);
+  const ver = Object.fromEntries(r.verification.rows.map(x => [x.id, x]));
+  $('#main').innerHTML = `<div style="margin-bottom:14px"><select onchange="selInc=this.value;rca()">${ids.map(i => { const x = S.incidents.find(z => z.id === i); return `<option value="${i}" ${i === selInc ? 'selected' : ''}>${i} · ${esc(x ? x.src + ' · ' + x.summary : '')}</option>`; }).join('')}</select>
+    <span class="mute" style="margin-left:10px">evidence source: ${esc(r.evidence_source)}</span></div>
+  <div class="card"><h2>What happened and what was the impact</h2><table>${r.stages.map(s => `<tr><td style="width:190px"><b>${esc(s.title)}</b></td><td><span class="pill ${LV[s.impact.level]}">${esc(s.impact.level)}</span> ${esc(s.impact.text)}</td></tr>`).join('')}</table></div>
+  <h3>Ranked root causes (${r.root_causes.length} confirmed)</h3>
+  ${r.root_causes.map(c => `<div class="cause"><div><b>${c.rank}. ${esc(c.cause)}</b></div>
+    <div style="margin:4px 0"><span class="pill ${c.confidence === 'high' ? 'ok' : 'warn'}">confidence ${c.confidence}</span> <span class="pill acc">${esc(c.mitigation)} ${esc(c.mitigation_name)}</span> <span class="mute">enabled: ${(c.classes || [c.class]).join(', ')}</span>
+    ${ver[c.id] ? `<span class="pill ${ver[c.id].result === 'cleared' ? 'ok' : 'warn'}">${ver[c.id].result === 'cleared' ? 'fix verified on patched config' : esc(ver[c.id].result)}</span>` : ''}</div>
+    <ul>${c.evidence.map(e => `<li>${esc(e)}</li>`).join('')}</ul>
+    <div class="tier"><b>Immediate</b><span>${esc(c.fix.immediate)}</span><b>Short term</b><span>${esc(c.fix.short_term)}</span><b>Long term</b><span>${esc(c.fix.long_term)}</span></div></div>`).join('')}
+  <div class="card"><h2>Verification</h2><p>${r.verification.cleared} of ${r.verification.total} root causes cleared when the generated fixes were applied to a copy of the victim's real config files and every config test was re-run. The rest are network-evidence causes that need a live re-attack against the patched lab. Fix pack: <span class="mono">out/fixpack/${esc(selInc)}/</span></p></div>`;
+}
+
+// ---------- quality
+function chart(v) {
+  const W = 380, H = 190, L = 34, B = 26, T = 22, R = 10, lx = t => L + (Math.log10(t) / 3) * (W - L - R), ly = p => T + (1 - p) * (H - T - B);
+  const pts = (k, col) => '<polyline fill="none" stroke="' + col + '" stroke-width="2" points="' + v.curve.map(c => lx(c.t) + ',' + ly(c[k])).join(' ') + '"/>';
+  const lo = Math.max(1, v.band[0]), hi = Math.min(1000, Math.max(v.band[1], lo));
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%"><text x="${L}" y="13" style="fill:var(--text)">${esc(v.class)} &middot; ${v.layer}</text>
+    <rect x="${lx(lo)}" y="${T}" width="${Math.max(2, lx(hi) - lx(lo))}" height="${H - T - B}" fill="#35c27a" opacity=".13"/>
+    <line x1="${L}" y1="${ly(0)}" x2="${W - R}" y2="${ly(0)}" stroke="#243049"/><line x1="${L}" y1="${ly(1)}" x2="${W - R}" y2="${ly(1)}" stroke="#243049" stroke-dasharray="3"/>
+    ${pts('recall', '#5aa2ff')}${pts('precision', '#35c27a')}
+    <line x1="${lx(v.current)}" y1="${T}" x2="${lx(v.current)}" y2="${H - B}" stroke="${v.in_band ? '#e7b341' : '#ef5b5b'}" stroke-width="2"/>
+    <text x="${lx(v.current) + 4}" y="${T + 11}" style="fill:#e7b341">chosen ${v.current}</text>
+    ${[1, 10, 100, 1000].map(t => `<text x="${lx(t) - (t === 1000 ? 22 : 6)}" y="${H - 8}">${t}</text>`).join('')}<text x="2" y="${ly(1) + 4}">1</text><text x="2" y="${ly(0) + 4}">0</text></svg>`;
+}
+function quality() {
+  const rows = Object.entries(S.score.engines).flatMap(([en, per]) => Object.entries(per).map(([c, v]) =>
+    `<tr><td>${esc(en)}</td><td>${esc(c)}</td><td>${v.tp}/${v.positives}</td><td>${pct(v.recall)}</td><td>${pct(v.precision)}</td><td>${v.fp_alerts}</td><td>${v.ttd_median_s == null ? '-' : v.ttd_median_s + ' s'}</td></tr>`)).join('');
+  $('#main').innerHTML = `<div class="card"><h2>Measured detection quality</h2><p class="mute">Attacks: core captures. False alerts counted over ${S.score.neg_pcaps} benign and hard-negative captures (${S.score.neg_hours} h of traffic).</p>
+  <table><tr><th>Engine</th><th>Class</th><th>Detected</th><th>Recall</th><th>Precision</th><th>False alerts</th><th>Median time to detect</th></tr>${rows}</table></div>
+  <h3>Threshold sweep: why each threshold was chosen</h3>
+  <p class="mute">Blue = recall, green = precision across a ladder of thresholds. The green band is the safe range: above the noisiest benign behavior, below the weakest real attack. The yellow line is the threshold in use.</p>
+  <div class="grid g2">${Object.values(S.sweep).map(v => `<div class="card">${chart(v)}<div class="mute">safe band ${v.band[0]}&ndash;${v.band[1]} &middot; noisiest benign: ${esc(v.worst_benign)} (${v.max_benign}) &middot; weakest attack: ${esc(v.weakest_attack)} (${v.min_attack})</div></div>`).join('')}</div>`;
+}
+
+// ---------- robustness / evasion
+const cellHtml = (cells, k) => !(k in cells) ? '<span class="cell cn">n/a</span>' : cells[k] ? '<span class="cell c1">caught</span>' : '<span class="cell c0">missed</span>';
+function robust() {
+  $('#main').innerHTML = `<p class="mute">The same attack at decreasing speed. Where every column turns red is the edge of what this system can see.</p>` +
+  Object.entries(S.grid).map(([cls, rows]) => { const cols = rows.length ? Object.keys(rows[0].cells) : [];
+    return `<div class="card" style="margin-bottom:14px"><h2>${esc(cls)}</h2><table><tr><th>Events / second</th>${cols.map(c => `<th>${esc(c.replace(':', ' '))}</th>`).join('')}<th>Any layer</th></tr>
+    ${rows.map(r => `<tr><td class="mono">${r.rate}</td>${cols.map(c => `<td>${cellHtml(r.cells, c)}</td>`).join('')}<td><span class="pill ${r.caught ? 'ok' : 'bad'}">${r.caught ? 'detected' : 'invisible'}</span></td></tr>`).join('')}</table></div>`; }).join('');
+}
+function evasion() {
+  const cols = S.evasion.length ? Object.keys(S.evasion[0].cells) : [];
+  $('#main').innerHTML = `<div class="card"><h2>Evasion matrix</h2><p class="mute">Layer 1 (Suricata) is fast but has a short window. Layer 2 (Zeek) watches longer and catches slow and low attacks. UA = user-agent signature, shown to prove it is not reliable on its own.</p>
+  <table><tr><th>Case</th><th>What the attacker did</th>${cols.map(c => `<th>${esc(c.replace(':', ' '))}</th>`).join('')}<th>Result</th></tr>
+  ${S.evasion.map(r => `<tr><td class="mono">${esc(r.pcap)}</td><td>${esc(r.desc)}</td>${cols.map(c => `<td>${cellHtml(r.cells, c)}</td>`).join('')}<td>${r.caught ? '<span class="pill ok">caught</span>' : '<span class="pill bad">' + (r.known_gap ? 'known gap' : 'missed') + '</span>'}</td></tr>`).join('')}</table>
+  <p class="mute">Known gap: guessing spread over many source addresses defeats per-source counting. Mitigation on the roadmap: aggregate by destination.</p></div>`;
+}
+
+// ---------- coverage / alerts
+function coverage() {
+  $('#main').innerHTML = `<div class="grid g4">${S.coverage.map(c => `<div class="card"><span class="pill acc">${esc(c.tactic)} ${esc(c.tactic_id)}</span><h2 style="margin-top:10px">${esc(c.technique)} ${esc(c.technique_name)}</h2>
+  <p><span class="pill ${c.detected_by.length >= 2 ? 'ok' : c.detected_by.length ? 'warn' : 'bad'}">${c.detected_by.length ? 'detected by ' + c.detected_by.join(' + ') : 'not detected'}</span> <span class="pill">recall ${pct(c.recall)}</span></p>
+  <p class="mute">${esc(c.observed)}</p><h3>D3FEND</h3><div>${c.d3fend.map(esc).join('<br>')}</div><h3>Mitigations</h3><div>${c.mitigations.map(m => esc(m.id + ' ' + m.name)).join('<br>')}</div>
+  ${c.tuning_note ? `<h3>Tuning</h3><div class="mute">${esc(c.tuning_note)}</div>` : ''}</div>`).join('')}</div>`;
+}
+function alerts() {
+  const a = [...(S.alerts || [])].sort((x, y) => y.ts - x.ts).slice(0, 250);
+  $('#main').innerHTML = `<div class="card"><h2>Alert feed ${window.__LIVE__ ? '<span class="pill bad">live</span>' : ''}</h2><table><tr><th>Time</th><th>Sensor</th><th>Layer</th><th>Class</th><th>Source</th><th>Rule</th></tr>
+  ${a.map(e => `<tr><td class="mono">${time(e.ts)}</td><td>${esc(e.sensor)}</td><td>${esc(e.layer)}</td><td>${esc(e.class)}</td><td class="mono">${esc(e.src)}</td><td class="mute">${esc(e.name)}</td></tr>`).join('')}</table></div>`;
+}
+
+function render() { renderTop(); renderNav(); ({overview, incidents, rca, quality, robust, evasion, coverage, alerts})[tab](); }
+function boot() { if (!S) { $('#main').innerHTML = '<div class="card">No data yet. Run <span class="mono">python -m tripwire test</span>.</div>'; return; } render(); }
+boot();
+if (window.__LIVE__) {
+  let sig = '';
+  setInterval(() => fetch('/api/state').then(r => r.json()).then(s => {
+    const n = JSON.stringify([s.alerts.length, s.incidents.map(i => i.id + ':' + i.stages.length + ':' + i.risk)]);
+    S = s; if (n === sig) return; sig = n;
+    if (tab !== 'rca') render(); else renderTop();
+  }).catch(() => {}), 2000);
+}
+</script>
+</body>
+</html>

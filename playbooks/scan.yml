@@ -1,0 +1,15 @@
+class: scan
+impact: {fn: ports_found}
+hypotheses:
+  - id: scan-unnecessary-ports
+    weight: 8
+    cause: "Services other than the public web ports answered an untrusted source, widening the attack surface"
+    tests:
+      - {kind: evidence, fn: open_ports_exposed, allowed: [80, 443]}
+    mitigation: M1042
+    fix:
+      immediate: "Block the scanning source and confirm which discovered services must stay reachable."
+      short_term: "Close or bind to localhost every service that does not need network access; restrict the rest by source subnet."
+      long_term: "Maintain an approved-service inventory and alert on any new listening port."
+    snippet: []
+  - use: flat-network

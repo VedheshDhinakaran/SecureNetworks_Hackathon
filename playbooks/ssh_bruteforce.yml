@@ -1,0 +1,38 @@
+class: ssh_bruteforce
+impact: {fn: ssh_login_probable}
+hypotheses:
+  - id: ssh-password-auth
+    weight: 10
+    cause: "SSH password authentication is enabled, so passwords can be guessed over the network"
+    tests:
+      - {kind: config, file: sshd_config, key: PasswordAuthentication, default: "yes", bad: ["yes"]}
+    mitigation: M1042
+    fix:
+      immediate: "Block the source, force a password reset for targeted accounts and review auth logs for successful logins."
+      short_term: "Set PasswordAuthentication no and use key-based login only; reload sshd."
+      long_term: "Require keys or certificates with MFA for administrators and manage keys centrally."
+    snippet: [{op: set, file: sshd_config, key: PasswordAuthentication, value: "no"}]
+  - id: ssh-root-login
+    weight: 7
+    cause: "Direct root login over SSH is allowed, so a single guessed password gives full control"
+    tests:
+      - {kind: config, file: sshd_config, key: PermitRootLogin, default: "prohibit-password", bad: ["yes"]}
+    mitigation: M1036
+    fix:
+      immediate: "Disable root login and audit root activity."
+      short_term: "Set PermitRootLogin no; use sudo from named accounts."
+      long_term: "Privileged access management with per-user audit trails."
+    snippet: [{op: set, file: sshd_config, key: PermitRootLogin, value: "no"}]
+  - id: ssh-no-attempt-limit
+    weight: 8
+    cause: "Nothing limits repeated login attempts: the attacker made dozens of attempts unchallenged"
+    tests:
+      - {kind: config, file: sshd_config, key: MaxAuthTries, default: "6", bad_gt: 4}
+      - {kind: evidence, fn: attempts_unthrottled, min: 20}
+    mitigation: M1036
+    fix:
+      immediate: "Add a connection rate limit for port 22 (nft: ct state new limit rate over 6/minute drop)."
+      short_term: "Set MaxAuthTries 3 and deploy fail2ban or an equivalent automatic ban."
+      long_term: "Account lockout and alerting policy for repeated authentication failures."
+    snippet: [{op: set, file: sshd_config, key: MaxAuthTries, value: "3"}]
+  - use: flat-network

@@ -1,0 +1,95 @@
+# Tripwire detection catalog: the single source of truth (detection-as-code).
+# Suricata rules, Zeek thresholds, Navigator layer, enrichment, RCA mapping and
+# the detection-logic document are ALL generated from this file.
+# Edit thresholds here, then run:  python -m tripwire build-rules
+
+meta:
+  project: Tripwire
+  # MITRE IDs below come from the hackathon brief. Confirm them against the
+  # current ATT&CK release and record the version here before you submit.
+  attack_version: "CONFIRM-BEFORE-SUBMIT"
+  home_net: "10.0.0.0/24"
+  victim_ip: "10.0.0.10"
+  mgmt_subnet: "10.0.3.0/24"       # the only subnet allowed to administer the victim
+
+mitigations:
+  M1030: Network Segmentation
+  M1031: Network Intrusion Prevention
+  M1035: Limit Access to Resource Over Network
+  M1036: Account Use Policies
+  M1037: Filter Network Traffic
+  M1042: Disable or Remove Feature or Program
+  M1050: Exploit Protection
+  M1054: Software Configuration
+
+# Layers: L1 = Suricata, short window, fast signature/threshold.
+#         L2 = Zeek (and native), long window, catches slow/low attacks.
+classes:
+  web_fuzz:
+    title: Web wordlist fuzzing
+    technique: T1595.003
+    technique_name: "Wordlist Scanning"
+    tactic: Reconnaissance
+    tactic_id: TA0043
+    order: 1                         # kill-chain order used by correlation
+    severity: 3
+    l1: {count: 15, window: 10}      # 404 responses per client in 10 s
+    l2: {count: 25, window: 300}     # 404 responses per client in 5 min
+    sid: 1000041
+    sid_aux: 1000042                 # fuzzer user-agent bonus signal
+    d3fend: [Network Traffic Analysis, Protocol Metadata Anomaly Detection]
+    mitigations: [M1037, M1050]
+    observed: "A burst of HTTP 404 responses returned to a single client."
+    why: "Wordlist fuzzers request hundreds of guessed paths; almost all miss and return 404. Normal browsing produces a handful of 404s at most."
+    evasion: "Slow the rate below the short window, or spoof the user agent. Layer 2 (5-minute window) still counts the misses."
+  scan:
+    title: Port scanning / service discovery
+    technique: T1046
+    technique_name: "Network Service Discovery"
+    tactic: Discovery
+    tactic_id: TA0007
+    order: 2
+    severity: 4
+    l1: {count: 30, window: 5}       # SYNs per source in 5 s
+    l2: {count: 15, window: 300}     # distinct destination ports per source in 5 min
+    sid: 1000001
+    d3fend: [Connection Attempt Analysis, Network Traffic Analysis]
+    mitigations: [M1031, M1037]
+    observed: "One source sends many TCP SYNs, to many different ports."
+    why: "A scanner probes a large port range quickly. Legitimate clients talk to a few well-known ports."
+    evasion: "nmap -T1 style slow scanning stays under the short window. Layer 2 counts distinct ports over 5 minutes instead."
+  ssh_bruteforce:
+    title: SSH password guessing
+    technique: T1110.001
+    technique_name: "Password Guessing"
+    tactic: Credential Access
+    tactic_id: TA0006
+    order: 3
+    severity: 6
+    l1: {count: 6, window: 30}       # new SSH connections per source in 30 s
+    l2: {count: 14, window: 300}     # new SSH connections per source in 5 min
+    tuning_note: "L2 started at 10 and false-positived on the monitoring-poll hard negative (11 SSH checks in 5 min). Sweep showed a safe band of 12-15; chose 14."
+    sid: 1000011
+    d3fend: [Connection Attempt Analysis, Network Traffic Analysis]
+    mitigations: [M1036, M1031, M1035]
+    observed: "Many new TCP connections to port 22 from one source."
+    why: "Each password guess is a new SSH connection. People rarely open more than a few sessions in a minute; guessers open dozens."
+    evasion: "Throttle to one guess every 15-20 s. Layer 2 counts connections over 5 minutes. Guessing spread across many source IPs evades per-source counting (known gap)."
+  smb_admin:
+    title: SMB administrative share access
+    technique: T1021.002
+    technique_name: "SMB/Windows Admin Shares"
+    tactic: Lateral Movement
+    tactic_id: TA0008
+    order: 4
+    severity: 8
+    sid: 1000031
+    sid_aux: 1000032
+    d3fend: [Network Traffic Analysis, Protocol Metadata Anomaly Detection]
+    mitigations: [M1030, M1035, M1037]
+    observed: "An SMB tree-connect to C$, D$ or ADMIN$ (IPC$ is excluded: it is routine)."
+    why: "Administrative shares expose whole disks. Ordinary file-share traffic uses named shares, never C$ or ADMIN$."
+    evasion: "SMB3 encryption hides the share name from the sensor; host-side auditing is then needed. Case changes do not evade (matching is case-insensitive)."
+
+# Fixed answer keys used by the dashboard and reports.
+tactic_order: [Reconnaissance, Discovery, "Credential Access", "Lateral Movement"]

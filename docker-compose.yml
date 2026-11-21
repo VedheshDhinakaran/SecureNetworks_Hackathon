@@ -1,0 +1,116 @@
+# Tripwire lab: a deliberately weak victim, an attacker, benign users, two sensors and the platform.
+# One flat network on purpose (that is the "flat-network" root cause the platform will find).
+#
+#   docker compose up -d --build            start the lab and the live platform
+#   docker compose exec attacker /lab/run_all.sh    run the four attacks as one kill chain
+#   open http://localhost:8765              live dashboard
+#   docker compose --profile capture up capture      record a real PCAP of everything the victim sees
+#
+# ATTACKS RUN ONLY INSIDE THIS LAB. Never point these tools at any other network.
+
+name: tripwire
+
+networks:
+  lab:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.0.0/16
+          gateway: 10.0.0.1
+
+services:
+  victim:
+    build: ./lab/victim
+    container_name: tripwire-victim
+    hostname: victim
+    cap_add: [NET_ADMIN]
+    networks:
+      lab: {ipv4_address: 10.0.0.10}
+    volumes:
+      - ./lab/victim/conf:/conf:ro
+      - ./data/hostlogs:/var/log/hostlogs
+
+  attacker:
+    build: ./lab/attacker
+    container_name: tripwire-attacker
+    hostname: attacker
+    cap_add: [NET_RAW, NET_ADMIN]     # Kali's nmap needs raw sockets for SYN scans
+    networks:
+      lab: {ipv4_address: 10.0.1.50}
+    volumes:
+      - ./lab/attacker:/lab:ro
+    depends_on: [victim]
+    command: ["sleep", "infinity"]
+
+  benign:
+    build: ./lab/benign
+    container_name: tripwire-benign
+    hostname: workstation
+    networks:
+      lab: {ipv4_address: 10.0.2.21}
+    volumes:
+      - ./lab/benign:/lab:ro
+    depends_on: [victim]
+    command: ["/lab/benign_gen.sh", "720"]
+    profiles: [benign]
+
+  admin:
+    build: ./lab/benign
+    container_name: tripwire-admin
+    hostname: admin-jump
+    networks:
+      lab: {ipv4_address: 10.0.3.5}
+    volumes:
+      - ./lab/benign:/lab:ro
+    depends_on: [victim]
+    command: ["sleep", "infinity"]
+    profiles: [benign]
+
+  # --- sensors share the victim's network namespace, so they see exactly what the victim sees ---
+  suricata:
+    image: jasonish/suricata:latest
+    container_name: tripwire-suricata
+    network_mode: "service:victim"
+    cap_add: [NET_ADMIN, NET_RAW, SYS_NICE]
+    entrypoint: ["suricata"]
+    command: ["-c", "/etc/suricata/suricata.yaml", "-S", "/rules/tripwire.rules", "-i", "eth0", "-k", "none",
+              "--set", "vars.address-groups.HOME_NET=[10.0.0.0/24]", "-l", "/var/log/suricata"]
+    volumes:
+      - ./rules:/rules:ro
+      - ./data/live/suricata:/var/log/suricata
+    depends_on: [victim]
+
+  zeek:
+    image: zeek/zeek:latest
+    container_name: tripwire-zeek
+    network_mode: "service:victim"
+    cap_add: [NET_ADMIN, NET_RAW]
+    working_dir: /logs
+    entrypoint: ["zeek"]
+    command: ["-i", "eth0", "-C", "/zeek/tripwire.zeek"]
+    volumes:
+      - ./zeek:/zeek:ro
+      - ./data/live/zeek:/logs
+    depends_on: [victim]
+
+  platform:
+    build: .
+    container_name: tripwire-platform
+    ports: ["8765:8765"]
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: >
+      sh -c "[ -f out/state.json ] || python -m tripwire test --engines native --no-canary;
+             python -m tripwire serve --tail --host 0.0.0.0 --port 8765"
+    depends_on: [suricata, zeek]
+
+  capture:
+    image: nicolaka/netshoot
+    container_name: tripwire-capture
+    network_mode: "service:victim"
+    cap_add: [NET_ADMIN, NET_RAW]
+    command: ["tcpdump", "-i", "eth0", "-U", "-w", "/pcaps/lab_capture.pcap"]
+    volumes:
+      - ./data/real_pcaps:/pcaps
+    profiles: [capture]

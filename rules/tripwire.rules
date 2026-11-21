@@ -1,0 +1,23 @@
+# =====================================================================
+# Tripwire Layer-1 (fast) Suricata rules.
+# GENERATED from detections/catalog.yml by `python -m tripwire build-rules`.
+# Do not edit by hand: change thresholds in the catalog instead.
+# NOTE: time-window rules are only reliable when Suricata runs single-threaded on a PCAP
+# (--runmode single). In the default multi-threaded offline mode flows are processed out of time
+# order and the same rule gave nondeterministic results (found by the evasion matrix).
+# =====================================================================
+
+# Port scanning / service discovery - T1046 Network Service Discovery
+alert tcp any any -> $HOME_NET any (msg:"TRIPWIRE SCAN SYN sweep from one source (L1)"; flow:to_server; flags:S,12; threshold:type both, track by_src, count 30, seconds 5; classtype:network-scan; sid:1000001; rev:1; metadata:mitre_technique_id T1046, mitre_tactic discovery, tripwire_class scan, tripwire_layer L1, tripwire_severity 4;)
+
+# SSH password guessing - T1110.001 Password Guessing
+alert tcp any any -> $HOME_NET 22 (msg:"TRIPWIRE SSH password guessing: connection burst (L1)"; flow:to_server; flags:S,12; threshold:type both, track by_src, count 6, seconds 30; classtype:attempted-admin; sid:1000011; rev:1; metadata:mitre_technique_id T1110.001, mitre_tactic credential_access, tripwire_class ssh_bruteforce, tripwire_layer L1, tripwire_severity 6;)
+
+# SMB administrative share access - T1021.002 SMB/Windows Admin Shares  (IPC$ deliberately excluded)
+alert smb any any -> $HOME_NET any (msg:"TRIPWIRE SMB ADMIN$ share tree-connect (L1)"; flow:to_server,established; smb.share; content:"ADMIN$"; nocase; classtype:attempted-admin; sid:1000031; rev:1; metadata:mitre_technique_id T1021.002, mitre_tactic lateral_movement, tripwire_class smb_admin, tripwire_layer L1, tripwire_severity 8;)
+alert smb any any -> $HOME_NET any (msg:"TRIPWIRE SMB C$/D$/E$ drive share tree-connect (L1)"; flow:to_server,established; smb.share; pcre:"/\x5c[c-e]\x24$/i"; classtype:attempted-admin; sid:1000032; rev:1; metadata:mitre_technique_id T1021.002, mitre_tactic lateral_movement, tripwire_class smb_admin, tripwire_layer L1, tripwire_severity 8;)
+
+# Web wordlist fuzzing - T1595.003 Wordlist Scanning
+alert http any any -> any any (msg:"TRIPWIRE WEB-FUZZ 404 burst to one client (L1)"; flow:established,to_client; http.stat_code; content:"404"; threshold:type both, track by_dst, count 15, seconds 10; classtype:web-application-attack; sid:1000041; rev:1; metadata:mitre_technique_id T1595.003, mitre_tactic reconnaissance, tripwire_class web_fuzz, tripwire_layer L1, tripwire_severity 3;)
+# Auxiliary signal only: user agents are trivially spoofed (see evasion matrix).
+alert http any any -> $HOME_NET any (msg:"TRIPWIRE WEB-FUZZ known fuzzer user agent (aux)"; flow:established,to_server; http.user_agent; pcre:"/(fuzz faceless|gobuster|sqlmap|nikto|wfuzz|dirbuster)/i"; classtype:web-application-attack; sid:1000042; rev:1; metadata:mitre_technique_id T1595.003, mitre_tactic reconnaissance, tripwire_class web_fuzz, tripwire_layer L1, tripwire_severity 3;)

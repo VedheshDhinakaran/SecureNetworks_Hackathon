@@ -1,0 +1,29 @@
+# Hypotheses reused by several playbooks (referenced with `use: <id>`).
+flat-network:
+  id: flat-network
+  weight: 8
+  cause: "The service is reachable from an untrusted network segment: no segmentation and no default-deny ingress filtering"
+  tests:
+    - {kind: evidence, fn: src_outside_mgmt}
+    - {kind: config_regex, file: nftables.conf, pattern: 'policy\s+accept', present_is_bad: true}
+  mitigation: M1030
+  fix:
+    immediate: "Block the attacking source address at the host firewall (see the generated nft block rule)."
+    short_term: "Switch the host firewall to default-deny and allow SSH only from the management subnet, SMB and web only from the user subnet."
+    long_term: "Segment the network into user, server and management zones joined by a filtering router."
+  snippet:
+    - op: write
+      file: nftables.conf
+      content: |
+        # Hardened by Tripwire fix pack: default deny, management-only SSH.
+        table inet filter {
+            chain input {
+                type filter hook input priority 0; policy drop;
+                ct state established,related accept
+                iif lo accept
+                ip saddr 10.0.3.0/24 tcp dport 22 accept
+                tcp dport { 80, 443 } accept
+                ip saddr 10.0.2.0/24 tcp dport 445 accept
+                limit rate 5/minute log prefix "tripwire-drop " counter drop
+            }
+        }

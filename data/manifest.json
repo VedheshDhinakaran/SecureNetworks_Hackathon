@@ -1,0 +1,619 @@
+[
+ {
+  "name": "attack_scan",
+  "file": "attack_scan.pcap",
+  "kind": "attack",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.1.50"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251601.9984,
+  "duration": 2.0,
+  "packets": 2004,
+  "desc": "nmap-style SYN scan of 1000 ports at ~500 pps"
+ },
+ {
+  "name": "attack_ssh",
+  "file": "attack_ssh.pcap",
+  "kind": "attack",
+  "expect": [
+   "ssh_bruteforce"
+  ],
+  "attacker_ips": [
+   "10.0.1.51"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251665.082291,
+  "duration": 65.1,
+  "packets": 1444,
+  "desc": "hydra-style SSH guessing, 60 attempts, last one succeeds"
+ },
+ {
+  "name": "attack_smb",
+  "file": "attack_smb.pcap",
+  "kind": "attack",
+  "expect": [
+   "smb_admin"
+  ],
+  "attacker_ips": [
+   "10.0.1.52"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251606.4135983,
+  "duration": 6.4,
+  "packets": 54,
+  "desc": "smbclient-style access to IPC$, ADMIN$ and C$"
+ },
+ {
+  "name": "attack_fuzz",
+  "file": "attack_fuzz.pcap",
+  "kind": "attack",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.1.53"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251607.4797993,
+  "duration": 7.5,
+  "packets": 1230,
+  "desc": "ffuf-style wordlist fuzzing, 300 requests at 40 req/s"
+ },
+ {
+  "name": "attack_chain",
+  "file": "attack_chain.pcap",
+  "kind": "chain",
+  "expect": [
+   "web_fuzz",
+   "scan",
+   "ssh_bruteforce",
+   "smb_admin"
+  ],
+  "attacker_ips": [
+   "10.0.1.60"
+  ],
+  "attack_start": 1795251660.0,
+  "start": 1795251660.0,
+  "end": 1795252086.4135983,
+  "duration": 426.4,
+  "packets": 3990,
+  "desc": "One attacker walks the kill chain: recon, discovery, credential access, lateral movement",
+  "stage_start": {
+   "web_fuzz": 1795251660.0,
+   "scan": 1795251780.0,
+   "ssh_bruteforce": 1795251900.0,
+   "smb_admin": 1795252080.0
+  }
+ },
+ {
+  "name": "benign",
+  "file": "benign.pcap",
+  "kind": "benign",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251620.0,
+  "start": 1795251620.0,
+  "end": 1795252317.7696342,
+  "duration": 697.8,
+  "packets": 2010,
+  "desc": "12 minutes of ordinary browsing, admin SSH sessions and file-share use"
+ },
+ {
+  "name": "hn_mistyped_password",
+  "file": "hn_mistyped_password.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251658.4767675,
+  "duration": 58.5,
+  "packets": 198,
+  "desc": "A user mistypes the SSH password twice, then logs in"
+ },
+ {
+  "name": "hn_backup_job",
+  "file": "hn_backup_job.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251657.816798,
+  "duration": 57.8,
+  "packets": 440,
+  "desc": "Nightly backup opens 20 SMB sessions to the named backup share"
+ },
+ {
+  "name": "hn_dev_404s",
+  "file": "hn_dev_404s.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251618.0047994,
+  "duration": 18.0,
+  "packets": 190,
+  "desc": "A developer reloads a page with a few missing assets (6 x 404)"
+ },
+ {
+  "name": "hn_admin_portcheck",
+  "file": "hn_admin_portcheck.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251600.0804,
+  "duration": 0.1,
+  "packets": 13,
+  "desc": "An admin checks five known ports after a change window"
+ },
+ {
+  "name": "hn_monitoring_poll",
+  "file": "hn_monitoring_poll.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795252170.2504,
+  "duration": 570.3,
+  "packets": 300,
+  "desc": "Monitoring system polls six service ports every 30 s for 10 minutes"
+ },
+ {
+  "name": "hn_lb_healthcheck",
+  "file": "hn_lb_healthcheck.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251719.007199,
+  "duration": 119.0,
+  "packets": 1200,
+  "desc": "Load balancer health check, new connection every second for 2 minutes"
+ },
+ {
+  "name": "hn_page_burst",
+  "file": "hn_page_burst.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251603.5925,
+  "duration": 3.6,
+  "packets": 288,
+  "desc": "A busy single-page app opens 12 parallel connections at once"
+ },
+ {
+  "name": "ev_slow_scan",
+  "file": "ev_slow_scan.pcap",
+  "kind": "evasion",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.1.70"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251912.0004,
+  "duration": 312.0,
+  "packets": 81,
+  "desc": "Slow scan: one probe every 8 s (nmap -T1 style)"
+ },
+ {
+  "name": "ev_slow_ssh",
+  "file": "ev_slow_ssh.pcap",
+  "kind": "evasion",
+  "expect": [
+   "ssh_bruteforce"
+  ],
+  "attacker_ips": [
+   "10.0.1.71"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795252060.0667977,
+  "duration": 460.1,
+  "packets": 528,
+  "desc": "Throttled password guessing: one attempt every 20 s"
+ },
+ {
+  "name": "ev_slow_fuzz",
+  "file": "ev_slow_fuzz.pcap",
+  "kind": "evasion",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.1.72"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251837.0047994,
+  "duration": 237.0,
+  "packets": 326,
+  "desc": "Slow fuzzing, browser user agent, one request every 3 s"
+ },
+ {
+  "name": "ev_spoofed_ua",
+  "file": "ev_spoofed_ua.pcap",
+  "kind": "evasion",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.1.73"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251604.9797993,
+  "duration": 5.0,
+  "packets": 830,
+  "desc": "Fast fuzzing that spoofs a browser user agent (defeats UA-only rules)"
+ },
+ {
+  "name": "ev_smb_case",
+  "file": "ev_smb_case.pcap",
+  "kind": "evasion",
+  "expect": [
+   "smb_admin"
+  ],
+  "attacker_ips": [
+   "10.0.1.74"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251603.4135983,
+  "duration": 3.4,
+  "packets": 36,
+  "desc": "Admin share names in lower and mixed case"
+ },
+ {
+  "name": "ev_distributed_ssh",
+  "file": "ev_distributed_ssh.pcap",
+  "kind": "evasion",
+  "expect": [
+   "ssh_bruteforce"
+  ],
+  "attacker_ips": [
+   "10.0.5.1",
+   "10.0.5.2",
+   "10.0.5.3",
+   "10.0.5.4",
+   "10.0.5.5",
+   "10.0.5.6",
+   "10.0.5.7",
+   "10.0.5.8",
+   "10.0.5.9",
+   "10.0.5.10",
+   "10.0.5.11",
+   "10.0.5.12"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251654.0667977,
+  "duration": 54.1,
+  "packets": 792,
+  "desc": "Guessing spread over 12 source IPs (3 attempts each): known gap of per-source counting"
+ },
+ {
+  "name": "grid_scan_500",
+  "file": "grid_scan_500.pcap",
+  "kind": "grid",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.4.29"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251600.1184,
+  "duration": 0.1,
+  "packets": 121,
+  "desc": "scan at 500 events/s",
+  "rate": 500
+ },
+ {
+  "name": "grid_scan_50",
+  "file": "grid_scan_50.pcap",
+  "kind": "grid",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.4.30"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251601.1804001,
+  "duration": 1.2,
+  "packets": 121,
+  "desc": "scan at 50 events/s",
+  "rate": 50
+ },
+ {
+  "name": "grid_scan_5",
+  "file": "grid_scan_5.pcap",
+  "kind": "grid",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.4.31"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251611.8004,
+  "duration": 11.8,
+  "packets": 121,
+  "desc": "scan at 5 events/s",
+  "rate": 5
+ },
+ {
+  "name": "grid_scan_0.5",
+  "file": "grid_scan_0.5.pcap",
+  "kind": "grid",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.4.32"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251718.0004,
+  "duration": 118.0,
+  "packets": 121,
+  "desc": "scan at 0.5 events/s",
+  "rate": 0.5
+ },
+ {
+  "name": "grid_scan_0.1",
+  "file": "grid_scan_0.1.pcap",
+  "kind": "grid",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.4.33"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795252190.0004,
+  "duration": 590.0,
+  "packets": 121,
+  "desc": "scan at 0.1 events/s",
+  "rate": 0.1
+ },
+ {
+  "name": "grid_scan_0.03",
+  "file": "grid_scan_0.03.pcap",
+  "kind": "grid",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.4.34"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795253566.6670668,
+  "duration": 1966.7,
+  "packets": 121,
+  "desc": "scan at 0.03 events/s",
+  "rate": 0.03
+ },
+ {
+  "name": "grid_ssh_bruteforce_2",
+  "file": "grid_ssh_bruteforce_2.pcap",
+  "kind": "grid",
+  "expect": [
+   "ssh_bruteforce"
+  ],
+  "attacker_ips": [
+   "10.0.4.35"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251619.5667977,
+  "duration": 19.6,
+  "packets": 880,
+  "desc": "ssh_bruteforce at 2 events/s",
+  "rate": 2.0
+ },
+ {
+  "name": "grid_ssh_bruteforce_0.3",
+  "file": "grid_ssh_bruteforce_0.3.pcap",
+  "kind": "grid",
+  "expect": [
+   "ssh_bruteforce"
+  ],
+  "attacker_ips": [
+   "10.0.4.36"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251730.0667977,
+  "duration": 130.1,
+  "packets": 880,
+  "desc": "ssh_bruteforce at 0.3 events/s",
+  "rate": 0.3
+ },
+ {
+  "name": "grid_ssh_bruteforce_0.1",
+  "file": "grid_ssh_bruteforce_0.1.pcap",
+  "kind": "grid",
+  "expect": [
+   "ssh_bruteforce"
+  ],
+  "attacker_ips": [
+   "10.0.4.37"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251990.0667977,
+  "duration": 390.1,
+  "packets": 880,
+  "desc": "ssh_bruteforce at 0.1 events/s",
+  "rate": 0.1
+ },
+ {
+  "name": "grid_ssh_bruteforce_0.05",
+  "file": "grid_ssh_bruteforce_0.05.pcap",
+  "kind": "grid",
+  "expect": [
+   "ssh_bruteforce"
+  ],
+  "attacker_ips": [
+   "10.0.4.38"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795252380.0667977,
+  "duration": 780.1,
+  "packets": 880,
+  "desc": "ssh_bruteforce at 0.05 events/s",
+  "rate": 0.05
+ },
+ {
+  "name": "grid_ssh_bruteforce_0.02",
+  "file": "grid_ssh_bruteforce_0.02.pcap",
+  "kind": "grid",
+  "expect": [
+   "ssh_bruteforce"
+  ],
+  "attacker_ips": [
+   "10.0.4.39"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795253550.0667977,
+  "duration": 1950.1,
+  "packets": 880,
+  "desc": "ssh_bruteforce at 0.02 events/s",
+  "rate": 0.02
+ },
+ {
+  "name": "grid_web_fuzz_100",
+  "file": "grid_web_fuzz_100.pcap",
+  "kind": "grid",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.4.40"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251600.7947993,
+  "duration": 0.8,
+  "packets": 332,
+  "desc": "web_fuzz at 100 events/s",
+  "rate": 100
+ },
+ {
+  "name": "grid_web_fuzz_20",
+  "file": "grid_web_fuzz_20.pcap",
+  "kind": "grid",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.4.41"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251603.9547994,
+  "duration": 4.0,
+  "packets": 332,
+  "desc": "web_fuzz at 20 events/s",
+  "rate": 20
+ },
+ {
+  "name": "grid_web_fuzz_3",
+  "file": "grid_web_fuzz_3.pcap",
+  "kind": "grid",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.4.42"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251626.3381326,
+  "duration": 26.3,
+  "packets": 332,
+  "desc": "web_fuzz at 3 events/s",
+  "rate": 3
+ },
+ {
+  "name": "grid_web_fuzz_1",
+  "file": "grid_web_fuzz_1.pcap",
+  "kind": "grid",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.4.43"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251679.0047994,
+  "duration": 79.0,
+  "packets": 332,
+  "desc": "web_fuzz at 1 events/s",
+  "rate": 1
+ },
+ {
+  "name": "grid_web_fuzz_0.3",
+  "file": "grid_web_fuzz_0.3.pcap",
+  "kind": "grid",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.4.44"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251863.3381326,
+  "duration": 263.3,
+  "packets": 332,
+  "desc": "web_fuzz at 0.3 events/s",
+  "rate": 0.3
+ },
+ {
+  "name": "grid_web_fuzz_0.05",
+  "file": "grid_web_fuzz_0.05.pcap",
+  "kind": "grid",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.4.45"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795253180.0047994,
+  "duration": 1580.0,
+  "packets": 332,
+  "desc": "web_fuzz at 0.05 events/s",
+  "rate": 0.05
+ }
+]
