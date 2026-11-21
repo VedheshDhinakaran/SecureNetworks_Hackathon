@@ -127,7 +127,7 @@ function incidents() {
 }
 
 // ---------- root cause
-const LV = {confirmed: 'ok', probable: 'warn', none: 'acc', unknown: 'acc'};
+const LV = {confirmed: 'bad', probable: 'warn', attempted: 'acc', none: 'ok', unknown: 'acc'};
 function rca() {
   const ids = Object.keys(S.rca);
   if (!ids.length) { $('#main').innerHTML = '<div class="card">No root-cause analyses yet.</div>'; return; }

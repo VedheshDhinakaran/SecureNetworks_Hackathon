@@ -23,25 +23,40 @@ With Docker running and `jasonish/suricata` and `zeek/zeek` pulled, `python -m t
 
 Verified by running it (Suricata 8.0.8, Zeek 9.0.1, Python 3.12, Windows + Docker Desktop):
 
-- All 36 captures through Suricata, Zeek and the native detector. All gates pass: 0 false alerts on benign and hard-negative traffic for every sensor, 100% recall on the core attacks, every threshold inside its measured safe band.
-- The three sensors agree on every core attack (the engine-agreement table), and the native detector matches Suricata L1 and Zeek L2 cell for cell on the speed grid.
-- Rules load cleanly (`suricata -T`), the Zeek script parses, and both real sensors parse the generated SMB2 traffic.
-- 8 unit tests pass. A loosened threshold makes the gate fail (see the judge sheet).
+**Synthetic dataset (39 labelled captures)**
 
-Not yet run: the Docker lab itself (`docker compose up`), live `serve --tail` against real sensor logs, and `lab/verify.sh`. They are written but untested.
+- All captures through Suricata, Zeek and the native detector. All gates pass: 0 false alerts on benign and hard-negative traffic for every sensor, 100% recall on the core attacks, every threshold inside its measured safe band.
+- The three sensors agree on every core attack, and the native detector matches Suricata L1 and Zeek L2 cell for cell on the speed grid.
+- 12 unit tests pass. A loosened threshold makes the gate fail (see the judge sheet).
 
-Things the validation taught us (all handled):
+**Real Docker lab (victim with SSH, Samba and nginx; Kali attacker; Suricata and Zeek sidecars)**
 
-- Suricata's default offline mode is multi-threaded, so flows are processed out of time order and time-window rules gave nondeterministic results. The runner now uses `--runmode single`.
+- Real benign traffic (82 connections, including hard negatives): 0 alerts from all three sensors.
+- Real kill chain (ffuf, nmap, hydra, smbclient): all four classes detected. hydra really found the weak password; the victim's `auth.log` confirms it, and the root-cause analysis reports the SSH impact as confirmed from that host log.
+- Live mode: the platform container followed the sensor logs and produced incidents and root causes with live Zeek evidence.
+- Live fix verification (`lab/verify.sh`): before the fix all four attacks succeed; after the generated fix pack SSH guessing and SMB `C$` are blocked, `/admin`, `/backup` and `/.git` return 403, and only port 80 is visible. Restored afterwards.
+- SMB: the authorized admin host (10.0.3.5) opening `C$` and `ADMIN$` raised no alert; the same requests from a user host raised alerts with the server's verdict (granted, share missing). A request refused with access denied still alerts.
+
+Not covered: encrypted SMB3, a compromised designated admin host, guessing spread over many source IPs (all documented as known gaps), and real Windows targets.
+
+Things real testing taught us (all fixed):
+
+- Suricata's default offline mode is multi-threaded, so time-window rules gave nondeterministic results. The runner uses `--runmode single`.
 - Suricata appends to `eve.json`, so the runner wipes each capture's output folder first. Stale alerts had hidden the fix.
-- The monitoring-poll hard negative false-alerted on an early layer-2 SSH threshold (10). The sweep showed a safe band of 12 to 16 and the threshold is now 14.
+- The monitoring-poll hard negative false-alerted on an early layer-2 SSH threshold (10). The sweep showed a safe band of 12 to 16; the threshold is now 14.
+- Our first benign generator opened 18 SSH connections from one host in 150 seconds and both sensors rightly flagged it. The generator is now realistic.
+- Kali's nmap needs raw-socket capability inside a container (added to the compose file).
+- Fix packs were written with Windows line endings, which broke the nftables file in the Linux victim. They are written with LF now.
+- `PasswordAuthentication no` did not stop SSH guessing: with `UsePAM yes`, keyboard-interactive still accepts passwords. The fix and the playbook now also disable `KbdInteractiveAuthentication`. Found only by re-attacking the live lab.
+- The first web fix hid `/backup` and `/.git` behind a rate limit instead of denying them. The playbook now denies them, and `verify.sh` fuzzes slowly so a rate limit cannot hide a path.
+- SMB design ideas taken from a teammate's independent study, [SMB_Detection_Report.md](SMB_Detection_Report.md): allowlist the designated management hosts (a legitimate admin must not alert), record the server's outcome (granted, denied, share missing) instead of relying on successful mappings alone, and document the compromised-admin-host gap.
 
 ## Architecture
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the diagram and the flow, step by step.
 
 ```
- DATA        Docker lab (real attacks)  +  scapy generator (36 labelled, reproducible PCAPs)
+ DATA        Docker lab (real attacks)  +  scapy generator (39 labelled, reproducible PCAPs)
    |
  SENSORS     Suricata (L1, fast)   Zeek (L2, long window)   native Python plugin     <- all generated from ONE catalog.yml
    |

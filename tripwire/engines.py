@@ -18,7 +18,9 @@ from .evidence import Evidence, from_native, from_zeek
 
 IMAGES = {"suricata": "jasonish/suricata", "zeek": "zeek/zeek"}
 ZEEK_NOTES = {"Tripwire::Port_Scan": "scan", "Tripwire::SSH_Bruteforce": "ssh_bruteforce",
-              "Tripwire::Web_Fuzz": "web_fuzz", "Tripwire::SMB_Admin_Share": "smb_admin"}
+              "Tripwire::Web_Fuzz": "web_fuzz", "Tripwire::SMB_Admin_Share": "smb_admin",
+              "Tripwire::SMB_Admin_Share_Result": "smb_admin"}
+SMB_RESULTS = {"ACCESS_GRANTED": "granted", "ACCESS_DENIED": "denied", "OTHER_ERROR": "error"}
 
 
 # ------------------------------------------------------------------ availability
@@ -67,11 +69,11 @@ def run_engine(engine: str, pcap_dir: Path = PCAPS, force: bool = False, log=pri
     if engine == "suricata":
         script = ('for f in /pcap/*.pcap; do n=$(basename "$f" .pcap); rm -rf /out/$n; mkdir -p /out/$n; '
                   'suricata --runmode single -c /etc/suricata/suricata.yaml -S /rules/tripwire.rules -r "$f" -l /out/$n -k none '
-                  f'--set vars.address-groups.HOME_NET="[{cat["meta"]["home_net"]}]" > /out/$n/stdout.txt 2>&1; done')
+                  f'--set vars.address-groups.HOME_NET="[{cat["meta"]["home_net"]}]" > /out/$n/stdout.txt 2>&1 || true; done; true')
         mounts = _mount(pcap_dir, "/pcap") + _mount(RULES_DIR, "/rules") + _mount(out, "/out", ro=False)
     else:
         script = ('for f in /pcap/*.pcap; do n=$(basename "$f" .pcap); rm -rf /out/$n; mkdir -p /out/$n; cd /out/$n; '
-                  'zeek -C -r "$f" /zeek/tripwire.zeek > /out/$n/stdout.txt 2>&1; done')
+                  'zeek -C -r "$f" /zeek/tripwire.zeek > /out/$n/stdout.txt 2>&1 || true; done; true')
         mounts = _mount(pcap_dir, "/pcap") + _mount(ZEEK_DIR, "/zeek") + _mount(out, "/out", ro=False)
     log(f"  {engine}: running on {len(pcaps)} pcaps in {IMAGES[engine]} ...")
     r = _run(["docker", "run", "--rm", "--entrypoint", "/bin/sh", *mounts, IMAGES[engine], "-c", script], timeout=1800)
@@ -167,10 +169,13 @@ def normalize_zeek_notice(j: dict, pcap: str, cls_cat: dict | None = None) -> di
     if not cls:
         return None
     c = cls_cat[cls]
-    return {"ts": float(j["ts"]), "sensor": "zeek", "layer": "L2", "class": cls, "rule": j["note"],
-            "name": j.get("msg", j["note"]), "aux": False, "src": j.get("src", ""), "dst": j.get("dst", ""),
-            "dport": j.get("p") or 0, "technique": c["technique"], "tactic": c["tactic"],
-            "severity": c["severity"], "detail": j.get("msg", ""), "pcap": pcap}
+    e = {"ts": float(j["ts"]), "sensor": "zeek", "layer": "L2", "class": cls, "rule": j["note"],
+         "name": j.get("msg", j["note"]), "aux": False, "src": j.get("src", ""), "dst": j.get("dst", ""),
+         "dport": j.get("p") or 0, "technique": c["technique"], "tactic": c["tactic"],
+         "severity": c["severity"], "detail": j.get("msg", ""), "pcap": pcap}
+    if j.get("note") == "Tripwire::SMB_Admin_Share_Result":
+        e["outcome"] = SMB_RESULTS.get(j.get("sub", ""), "error")
+    return e
 
 
 # ------------------------------------------------------------------ public API

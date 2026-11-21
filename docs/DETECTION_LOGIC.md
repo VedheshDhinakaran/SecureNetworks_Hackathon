@@ -39,9 +39,9 @@ Generated from `detections/catalog.yml`. Two layers: **L1** (Suricata, short win
 ## SMB administrative share access (T1021.002 SMB/Windows Admin Shares)
 
 - **Tactic:** Lateral Movement (TA0008)
-- **What is observed:** An SMB tree-connect to C$, D$ or ADMIN$ (IPC$ is excluded: it is routine).
-- **Why it indicates the behavior:** Administrative shares expose whole disks. Ordinary file-share traffic uses named shares, never C$ or ADMIN$.
+- **What is observed:** An SMB tree-connect to C$, D$ or ADMIN$ from outside the management subnet. IPC$ is excluded (routine). The server's answer (granted, denied, share missing) is recorded.
+- **Why it indicates the behavior:** Administrative shares expose whole disks. Ordinary file-share traffic uses named shares, never C$ or ADMIN$. A refused request is still an attempt, so we alert on the request, not only on successful mappings.
 - **Signature:** tree-connect to an administrative share (Suricata sids 1000031, 1000032; Zeek notice)
-- **Known evasion:** SMB3 encryption hides the share name from the sensor; host-side auditing is then needed. Case changes do not evade (matching is case-insensitive).
+- **Known evasion:** SMB3 encryption hides the share name from the sensor. Case changes do not evade (matching is case-insensitive). A compromised designated admin host is allowlisted by design and therefore invisible (known gap).
 - **D3FEND:** Network Traffic Analysis, Protocol Metadata Anomaly Detection
 - **Mitigations:** Network Segmentation (M1030), Limit Access to Resource Over Network (M1035), Filter Network Traffic (M1037)

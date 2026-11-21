@@ -34,11 +34,14 @@ def suricata_rules() -> str:
             f'flags:S,12; threshold:type both, track by_src, count {c["l1"]["count"]}, seconds {c["l1"]["window"]}; '
             f'classtype:attempted-admin; sid:{c["sid"]}; rev:1; {_meta(c, "ssh_bruteforce", "L1")};)', ""]
     c = k["smb_admin"]
-    out += [f"# {c['title']} - {c['technique']} {c['technique_name']}  (IPC$ deliberately excluded)",
-            f'alert smb any any -> $HOME_NET any (msg:"TRIPWIRE SMB ADMIN$ share tree-connect (L1)"; flow:to_server,established; '
+    mgmt = cat["meta"]["mgmt_subnet"]
+    out += [f"# {c['title']} - {c['technique']} {c['technique_name']}",
+            f"# IPC$ is excluded (routine). The designated management subnet {mgmt} is allowlisted by policy: only an",
+            "# unexpected source role makes an administrative share request suspicious (see SMB_Detection_Report.md).",
+            f'alert smb ![{mgmt}] any -> $HOME_NET any (msg:"TRIPWIRE SMB ADMIN$ share tree-connect (L1)"; flow:to_server,established; '
             f'smb.share; content:"ADMIN$"; nocase; classtype:attempted-admin; sid:{c["sid"]}; rev:1; '
             f'{_meta(c, "smb_admin", "L1")};)',
-            f'alert smb any any -> $HOME_NET any (msg:"TRIPWIRE SMB C$/D$/E$ drive share tree-connect (L1)"; flow:to_server,established; '
+            f'alert smb ![{mgmt}] any -> $HOME_NET any (msg:"TRIPWIRE SMB C$/D$/E$ drive share tree-connect (L1)"; flow:to_server,established; '
             f'smb.share; pcre:"/\\x5c[c-e]\\x24$/i"; classtype:attempted-admin; sid:{c["sid_aux"]}; rev:1; '
             f'{_meta(c, "smb_admin", "L1")};)', ""]
     c = k["web_fuzz"]
@@ -68,8 +71,13 @@ redef LogAscii::use_json = T;
 module Tripwire;
 
 export {
-    redef enum Notice::Type += { Port_Scan, SSH_Bruteforce, Web_Fuzz, SMB_Admin_Share };
+    redef enum Notice::Type += { Port_Scan, SSH_Bruteforce, Web_Fuzz, SMB_Admin_Share, SMB_Admin_Share_Result };
 }
+
+# Designated administration hosts: allowlisted by policy, not by attacker address (SMB_Detection_Report.md, H3).
+const mgmt_net: subnet = @@MGMT_NET@@;
+# admin-share requests waiting for the server's answer: (connection uid, SMB message id) -> requested path
+global smb_pending: table[string, count] of string &write_expire=1min;
 
 # per-source state that forgets itself after the window
 global scan_ports: table[addr] of set[port] &create_expire=@@SCAN_WINDOW@@sec;
@@ -122,14 +130,41 @@ event http_reply(c: connection, version: string, code: count, reason: string)
                 $identifier=cat(src), $suppress_for=10min]);
     }
 
-# T1021.002: tree-connect to an administrative share (IPC$ is routine and excluded)
+# T1021.002: tree-connect to an administrative share (IPC$ is routine and excluded).
+# 1) the request raises the alert immediately, so a lost or delayed reply never hides an attempt
 event smb2_tree_connect_request(c: connection, hdr: SMB2::Header, path: string)
     {
+    if ( c$id$orig_h in mgmt_net )
+        return;
     local p = to_upper(path);
     if ( strstr(p, "\\ADMIN$") > 0 || strstr(p, "\\C$") > 0 || strstr(p, "\\D$") > 0 || strstr(p, "\\E$") > 0 )
+        {
+        smb_pending[c$uid, hdr$message_id] = path;
         NOTICE([$note=SMB_Admin_Share, $conn=c,
-                $msg=fmt("%s accessed administrative share %s", c$id$orig_h, path),
+                $msg=fmt("%s requested administrative share %s", c$id$orig_h, path),
                 $identifier=cat(c$id$orig_h, path), $suppress_for=1min]);
+        }
+    }
+
+# 2) the server's answer classifies the outcome (a refused request still matters; success-only logs miss it)
+event smb2_message(c: connection, hdr: SMB2::Header, is_orig: bool)
+    {
+    if ( is_orig || hdr$command != 3 )          # 3 = TREE_CONNECT
+        return;
+    if ( [c$uid, hdr$message_id] !in smb_pending )
+        return;
+    if ( hdr$status == 259 )                    # STATUS_PENDING is not final
+        return;
+    local path = smb_pending[c$uid, hdr$message_id];
+    delete smb_pending[c$uid, hdr$message_id];
+    local result = "OTHER_ERROR";
+    if ( hdr$status == 0 )
+        result = "ACCESS_GRANTED";
+    else if ( hdr$status == 3221225506 )        # 0xC0000022 STATUS_ACCESS_DENIED
+        result = "ACCESS_DENIED";               # (0xC00000CC STATUS_BAD_NETWORK_NAME stays OTHER_ERROR)
+    NOTICE([$note=SMB_Admin_Share_Result, $conn=c, $sub=result,
+            $msg=fmt("%s administrative share %s result=%s status=%d", c$id$orig_h, path, result, hdr$status),
+            $identifier=fmt("%s:%d", c$uid, hdr$message_id)]);
     }
 '''
 
@@ -141,7 +176,7 @@ def zeek_script() -> str:
         "@@SCAN_WINDOW@@": k["scan"]["l2"]["window"], "@@SCAN_COUNT@@": k["scan"]["l2"]["count"],
         "@@SSH_WINDOW@@": k["ssh_bruteforce"]["l2"]["window"], "@@SSH_COUNT@@": k["ssh_bruteforce"]["l2"]["count"],
         "@@FUZZ_WINDOW@@": k["web_fuzz"]["l2"]["window"], "@@FUZZ_COUNT@@": k["web_fuzz"]["l2"]["count"],
-        "@@HOME_NET@@": cat["meta"]["home_net"],
+        "@@HOME_NET@@": cat["meta"]["home_net"], "@@MGMT_NET@@": cat["meta"]["mgmt_subnet"],
     }
     s = ZEEK_TEMPLATE
     for a, b in rep.items():

@@ -87,9 +87,11 @@ classes:
     sid_aux: 1000032
     d3fend: [Network Traffic Analysis, Protocol Metadata Anomaly Detection]
     mitigations: [M1030, M1035, M1037]
-    observed: "An SMB tree-connect to C$, D$ or ADMIN$ (IPC$ is excluded: it is routine)."
-    why: "Administrative shares expose whole disks. Ordinary file-share traffic uses named shares, never C$ or ADMIN$."
-    evasion: "SMB3 encryption hides the share name from the sensor; host-side auditing is then needed. Case changes do not evade (matching is case-insensitive)."
+    observed: "An SMB tree-connect to C$, D$ or ADMIN$ from outside the management subnet. IPC$ is excluded (routine). The server's answer (granted, denied, share missing) is recorded."
+    why: "Administrative shares expose whole disks. Ordinary file-share traffic uses named shares, never C$ or ADMIN$. A refused request is still an attempt, so we alert on the request, not only on successful mappings."
+    evasion: "SMB3 encryption hides the share name from the sensor. Case changes do not evade (matching is case-insensitive). A compromised designated admin host is allowlisted by design and therefore invisible (known gap)."
+    allowlist: "meta.mgmt_subnet"       # sources inside the management subnet are expected to use admin shares
+    design_reference: SMB_Detection_Report.md
 
 # Fixed answer keys used by the dashboard and reports.
 tactic_order: [Reconnaissance, Discovery, "Credential Access", "Lateral Movement"]

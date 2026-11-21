@@ -175,12 +175,19 @@ def nb(msg: bytes) -> bytes:
     return b"\x00" + len(msg).to_bytes(3, "big") + msg
 
 
-def smb2_hdr(cmd: int, mid: int, flags: int = 0, tree: int = 0, sess: int = 0) -> bytes:
-    return b"\xfeSMB" + struct.pack("<HHIHHIIQIIQ", 64, 0, 0, cmd, 1, flags, 0, mid, 0, tree, sess) + b"\x00" * 16
+def smb2_hdr(cmd: int, mid: int, flags: int = 0, tree: int = 0, sess: int = 0, status: int = 0) -> bytes:
+    return b"\xfeSMB" + struct.pack("<HHIHHIIQIIQ", 64, 0, status, cmd, 1, flags, 0, mid, 0, tree, sess) + b"\x00" * 16
 
 
-def smb_session(cap: Cap, t: float, c: str, shares: list[str], gap: float = 0.4) -> float:
-    """SMB2 negotiate + session setup + one tree-connect per share (UNC paths in UTF-16LE)."""
+# NTSTATUS values seen in tree-connect responses (MS-ERREF)
+ST_OK, ST_DENIED, ST_BAD_NAME = 0x00000000, 0xC0000022, 0xC00000CC
+# Default server behaviour mirrors the Docker lab: C$ exists, ADMIN$ does not.
+SMB_STATUS = {"ADMIN$": ST_BAD_NAME, "D$": ST_BAD_NAME, "E$": ST_BAD_NAME}
+
+
+def smb_session(cap: Cap, t: float, c: str, shares: list, gap: float = 0.4) -> float:
+    """SMB2 negotiate + session setup + one tree-connect per share (UNC paths in UTF-16LE).
+    A share is a name, or (name, status) to force the server's NTSTATUS answer."""
     cn = Conn(cap, t, c, VICTIM, 445).open()
     guid = cap.rng.randbytes(16)
     sess = 0x0000_1122_3344_5566
@@ -191,10 +198,14 @@ def smb_session(cap: Cap, t: float, c: str, shares: list[str], gap: float = 0.4)
     cn.data_c(nb(smb2_hdr(1, 1) + struct.pack("<HBBIIHHQ", 25, 0, 1, 0, 0, 88, len(blob), 0) + blob))
     cn.data_s(nb(smb2_hdr(1, 1, 1, sess=sess) + struct.pack("<HHHH", 9, 0, 72, 0)))
     for i, share in enumerate(shares):
-        path = f"\\\\{VICTIM}\\{share}".encode("utf-16-le")
+        name, status = share if isinstance(share, tuple) else (share, SMB_STATUS.get(share.upper(), ST_OK))
+        path = f"\\\\{VICTIM}\\{name}".encode("utf-16-le")
         cn.at(cn.t + gap)
         cn.data_c(nb(smb2_hdr(3, 2 + i, 0, 0, sess) + struct.pack("<HHHH", 9, 0, 72, len(path)) + path))
-        cn.data_s(nb(smb2_hdr(3, 2 + i, 1, tree=i + 1, sess=sess) + struct.pack("<HBBIII", 16, 1, 0, 0x30, 0, 0x1F01FF)))
+        if status == ST_OK:
+            cn.data_s(nb(smb2_hdr(3, 2 + i, 1, tree=i + 1, sess=sess) + struct.pack("<HBBIII", 16, 1, 0, 0x30, 0, 0x1F01FF)))
+        else:   # error response: no tree id, ErrorResponse body
+            cn.data_s(nb(smb2_hdr(3, 2 + i, 1, tree=0, sess=sess, status=status) + struct.pack("<HBBI", 9, 0, 0, 0) + b"\x00"))
     cn.close()
     return cn.t
 
@@ -295,6 +306,10 @@ def build_dataset(seed: int = 7) -> list[dict]:
     c = cap(4); sc_fuzz(c, T0, "10.0.1.53")
     m.append(_save(c, "attack_fuzz", "attack", ["web_fuzz"], ["10.0.1.53"], "ffuf-style wordlist fuzzing, 300 requests at 40 req/s"))
 
+    c = cap(20); sc_smb(c, T0, "10.0.1.55", [("ADMIN$", ST_DENIED)])
+    m.append(_save(c, "attack_smb_denied", "attack", ["smb_admin"], ["10.0.1.55"],
+                   "One administrative-share request from a user host that the server refuses (access denied): a success-only detector misses it"))
+
     # -- multi-stage chain -----------------------------------------------------------
     c = cap(5); a = "10.0.1.60"
     sc_fuzz(c, T0 + 60, a, n=200, rps=30)
@@ -361,6 +376,13 @@ def build_dataset(seed: int = 7) -> list[dict]:
         sc_browse(c, T0 + i * 0.25, "10.0.2.40", pages=1)
     m.append(_save(c, "hn_page_burst", "hardneg", [], [], "A busy single-page app opens 12 parallel connections at once"))
 
+    c = cap(21)
+    for i in range(5):
+        smb_session(c, T0 + i * 1.2, "10.0.3.5", [("ADMIN$", ST_OK)])
+    smb_session(c, T0 + 8, "10.0.3.5", [("C$", ST_OK)])
+    m.append(_save(c, "hn_authorized_admin_smb", "hardneg", [], [],
+                   "The designated admin host legitimately opens ADMIN$ five times in six seconds, then C$"))
+
     # -- evasion cases -------------------------------------------------------------
     c = cap(14); sc_scan(c, T0, "10.0.1.70", ports=40, pps=1 / 8)
     m.append(_save(c, "ev_slow_scan", "evasion", ["scan"], ["10.0.1.70"], "Slow scan: one probe every 8 s (nmap -T1 style)"))
@@ -377,6 +399,10 @@ def build_dataset(seed: int = 7) -> list[dict]:
         sc_ssh(c, T0 + i * 4, ip, n=3, interval=5.0, success=False)
     m.append(_save(c, "ev_distributed_ssh", "evasion", ["ssh_bruteforce"], ips,
                    "Guessing spread over 12 source IPs (3 attempts each): known gap of per-source counting"))
+
+    c = cap(22); smb_session(c, T0, "10.0.3.5", [("C$", ST_OK)])
+    m.append(_save(c, "ev_admin_host_abuse", "evasion", ["smb_admin"], ["10.0.3.5"],
+                   "An attacker who has compromised the designated admin host: allowlisted by design, invisible (known gap)"))
 
     # -- robustness grid: same attack at decreasing speed -----------------------------
     for cls, rates, count in (("scan", GRID_RATES["scan"], 60), ("ssh_bruteforce", GRID_RATES["ssh_bruteforce"], 40),
