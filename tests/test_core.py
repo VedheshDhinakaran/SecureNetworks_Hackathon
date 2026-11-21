@@ -81,3 +81,41 @@ def test_root_cause_confirms_weak_ssh_config():
 def test_rules_are_clean():
     rules.build_rules()
     assert rules.lint_rules()[0] and rules.lint_sigma()[0]
+
+
+def test_smb_outcome_is_classified(tmp_path: Path):
+    c = gen.Cap(5)
+    gen.sc_smb(c, gen.T0, "10.0.1.97", [("ADMIN$", gen.ST_DENIED), "C$", "ADMIN$"], spacing=2.0)
+    p = tmp_path / "o.pcap"
+    c.write(p)
+    ev = native.detect(native.parse_pcap(p))
+    assert {e["outcome"] for e in ev} >= {"granted", "denied", "error"} or len(ev) >= 2
+    assert any(e["outcome"] == "granted" for e in ev)
+
+
+def test_denied_admin_share_attempt_still_alerts(tmp_path: Path):
+    c = gen.Cap(6)
+    gen.sc_smb(c, gen.T0, "10.0.1.96", [("ADMIN$", gen.ST_DENIED)])
+    p = tmp_path / "d.pcap"
+    c.write(p)
+    ev = native.detect(native.parse_pcap(p))
+    assert len(ev) == 1 and ev[0]["outcome"] == "denied"
+
+
+def test_management_host_is_allowlisted(tmp_path: Path):
+    c = gen.Cap(7)
+    for i in range(5):
+        gen.smb_session(c, gen.T0 + i, "10.0.3.5", [("ADMIN$", gen.ST_OK)])
+    p = tmp_path / "m.pcap"
+    c.write(p)
+    assert native.detect(native.parse_pcap(p)) == []
+
+
+def test_rca_impact_distinguishes_granted_from_refused():
+    ev = Evidence("test")
+    ev.add_smb(1, "10.0.1.9", r"\10.0.0.10\ADMIN$", "denied")
+    assert rca.impact("smb_admin_reached", ev, "10.0.1.9")["level"] == "attempted"
+    assert rca.ev_smb_admin_reached(ev, "10.0.1.9")[0] is False
+    ev.add_smb(2, "10.0.1.9", r"\10.0.0.10\C$", "granted")
+    assert rca.impact("smb_admin_reached", ev, "10.0.1.9")["level"] == "confirmed"
+    assert rca.ev_smb_admin_reached(ev, "10.0.1.9")[0] is True

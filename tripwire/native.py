@@ -8,6 +8,7 @@ Two jobs:
 """
 from __future__ import annotations
 
+import ipaddress
 import re
 import struct
 from bisect import bisect_left
@@ -25,6 +26,14 @@ from .config import load_catalog  # noqa: E402
 
 UA_RE = re.compile(r"(fuzz faceless|gobuster|sqlmap|nikto|wfuzz|dirbuster)", re.I)
 ADMIN_SHARE_RE = re.compile(r"\\(c|d|e|admin)\$$", re.I)
+SMB2_MAGIC = bytes([0xFE]) + b"SMB"
+
+
+def smb_outcome(status) -> str:
+    """NTSTATUS of a tree-connect reply -> granted | denied | error | unknown."""
+    if status is None:
+        return "unknown"
+    return {0: "granted", 0xC0000022: "denied"}.get(status, "error")
 
 
 @dataclass
@@ -37,7 +46,8 @@ class Facts:
     synack: list = field(default_factory=list)     # (ts, client, server, sport)
     http_req: list = field(default_factory=list)   # (ts, client, path, ua)
     http_resp: list = field(default_factory=list)  # (ts, client, code)
-    smb: list = field(default_factory=list)        # (ts, src, share_path)
+    smb: list = field(default_factory=list)        # (ts, src, share_path, sport, message_id)
+    smb_out: dict = field(default_factory=dict)    # (client, sport, message_id) -> NTSTATUS of the tree-connect reply
     ssh_flows: dict = field(default_factory=dict)  # (src, sport) -> [first, last, bytes]
 
 
@@ -84,13 +94,17 @@ def parse_pcap(path: str | Path) -> Facts:
                     f.http_resp.append((ts, ip.dst, code))
                 except ValueError:
                     pass
-            elif tcp.dport == 445 and len(payload) > 70 and payload[4:8] == b"\xfeSMB":
+            elif (tcp.dport == 445 or tcp.sport == 445) and len(payload) > 70 and payload[4:8] == SMB2_MAGIC:
+                status = struct.unpack_from("<I", payload, 4 + 8)[0]
                 cmd = struct.unpack_from("<H", payload, 4 + 12)[0]
                 flg = struct.unpack_from("<I", payload, 4 + 16)[0]
-                if cmd == 3 and not flg & 1:
+                mid = struct.unpack_from("<Q", payload, 4 + 24)[0]
+                if cmd == 3 and not flg & 1 and tcp.dport == 445:           # tree-connect request
                     off, ln = struct.unpack_from("<HH", payload, 4 + 64 + 4)
                     share = payload[4 + off:4 + off + ln].decode("utf-16-le", "replace")
-                    f.smb.append((ts, ip.src, share))
+                    f.smb.append((ts, ip.src, share, tcp.sport, mid))
+                elif cmd == 3 and flg & 1 and tcp.sport == 445 and status != 0x103:   # final reply (0x103 = pending)
+                    f.smb_out[(ip.dst, tcp.dport, mid)] = status
     f.t0, f.t1 = first or 0.0, last or 0.0
     _CACHE[path] = f
     return f
@@ -181,7 +195,7 @@ def features(f: Facts, home_prefix: str = "10.0.0.") -> dict[str, dict[str, int]
     w = cat["web_fuzz"]
     out["web_fuzz"]["L1"] = max((window_max(v, w["l1"]["window"]) for v in miss.values()), default=0)
     out["web_fuzz"]["L2"] = max((window_max(v, w["l2"]["window"]) for v in miss.values()), default=0)
-    out["smb_admin"]["L1"] = out["smb_admin"]["L2"] = sum(1 for _, _, p in f.smb if ADMIN_SHARE_RE.search(p))
+    out["smb_admin"]["L1"] = out["smb_admin"]["L2"] = sum(1 for t in f.smb if ADMIN_SHARE_RE.search(t[2]))
     return out
 
 
@@ -242,8 +256,14 @@ def detect(f: Facts, th: dict | None = None, home_prefix: str = "10.0.0.") -> li
             seen_ua.add(src)
             ev.append(_ev(ts, "L1", "web_fuzz", cat, src, victim, 80, "NATIVE-FUZZ-UA", "Fuzzer user agent", ua, f.name))
     seen = set()
-    for ts, src, share in f.smb:
+    mgmt = ipaddress.ip_network(load_catalog()["meta"]["mgmt_subnet"])
+    for ts, src, share, sport, mid in f.smb:
+        if ipaddress.ip_address(src) in mgmt:               # designated admin hosts are allowlisted by policy
+            continue
         if ADMIN_SHARE_RE.search(share) and (src, share.lower()) not in seen:
             seen.add((src, share.lower()))
-            ev.append(_ev(ts, "L1", "smb_admin", cat, src, victim, 445, "NATIVE-SMB-ADMIN", "Admin share tree-connect", share, f.name))
+            e = _ev(ts, "L1", "smb_admin", cat, src, victim, 445, "NATIVE-SMB-ADMIN", "Admin share tree-connect", share, f.name)
+            e["outcome"] = smb_outcome(f.smb_out.get((src, sport, mid)))
+            e["detail"] = f"{share} -> {e['outcome']}"
+            ev.append(e)
     return sorted(ev, key=lambda e: e["ts"])

@@ -7,6 +7,7 @@ which source it used.
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -18,15 +19,15 @@ class Evidence:
     def __init__(self, source: str = "none"):
         self.source = source
         self.conns: dict[str, list] = defaultdict(list)   # src -> [(ts, dst, dport, answered, dur, nbytes)]
-        self.smb: dict[str, list] = defaultdict(list)     # src -> [(ts, path)]
+        self.smb: dict[str, list] = defaultdict(list)     # src -> [(ts, path, outcome)]  outcome: granted|denied|error|None
         self.http: dict[str, list] = defaultdict(list)    # src -> [(ts, uri, status, ua)]
 
     # -- ingestion (used for files and for the live tailer) --------------------------
     def add_conn(self, ts, src, dst, dport, answered, dur=0.0, nbytes=0):
         self.conns[src].append((ts, dst, int(dport), bool(answered), float(dur or 0), int(nbytes or 0)))
 
-    def add_smb(self, ts, src, path):
-        self.smb[src].append((ts, path))
+    def add_smb(self, ts, src, path, outcome=None):
+        self.smb[src].append((ts, path, outcome))
 
     def add_http(self, ts, src, uri, status, ua=""):
         self.http[src].append((ts, uri, int(status or 0), ua))
@@ -40,11 +41,21 @@ class Evidence:
 
     def smb_admin_paths(self, src) -> list[str]:
         out = []
-        for _, p in self.smb.get(src, []):
+        for _, p, _o in self.smb.get(src, []):
             tail = p.rsplit("\\", 1)[-1].upper()
             if tail in ("ADMIN$", "C$", "D$", "E$") and p not in out:
                 out.append(p)
         return out
+
+    def smb_admin_outcomes(self, src) -> dict[str, str | None]:
+        """path -> best known outcome (granted beats denied beats error beats unknown)."""
+        rank = {"granted": 3, "denied": 2, "error": 1, None: 0, "unknown": 0}
+        best: dict[str, str | None] = {}
+        for _, p, o in self.smb.get(src, []):
+            tail = p.rsplit("\\", 1)[-1].upper()
+            if tail in ("ADMIN$", "C$", "D$", "E$") and rank.get(o, 0) >= rank.get(best.get(p), -1):
+                best[p] = o
+        return best
 
     def http_hits(self, src) -> list[tuple[str, int]]:
         seen: dict[str, int] = {}
@@ -89,8 +100,9 @@ def from_native(facts) -> Evidence:
         for i, (ts, uri, ua) in enumerate(sorted(lst)):
             code = resps[cl][i] if i < len(resps[cl]) else 0
             ev.add_http(ts, cl, uri, code, ua)
-    for ts, s, path in facts.smb:
-        ev.add_smb(ts, s, path)
+    from .native import smb_outcome
+    for ts, s, path, sport, mid in facts.smb:
+        ev.add_smb(ts, s, path, smb_outcome(facts.smb_out.get((s, sport, mid))))
     return ev
 
 
@@ -119,5 +131,12 @@ def from_zeek(d: Path) -> Evidence | None:
     for r in _jsonl(d / "http.log"):
         ev.add_http(r["ts"], r["id.orig_h"], r.get("uri", ""), r.get("status_code", 0), r.get("user_agent", ""))
     for r in _jsonl(d / "smb_mapping.log"):
-        ev.add_smb(r["ts"], r["id.orig_h"], r.get("path", ""))
+        ev.add_smb(r["ts"], r["id.orig_h"], r.get("path", ""), "granted")     # smb_mapping.log records successful mappings only
+    # attempts that were refused never reach smb_mapping.log: recover them from our outcome notices
+    for r in _jsonl(d / "notice.log"):
+        if r.get("note") == "Tripwire::SMB_Admin_Share_Result":
+            m = re.search(r"administrative share (.+?) result=(\w+)", r.get("msg", ""))
+            if m:
+                ev.add_smb(r["ts"], r.get("src", ""), m.group(1),
+                           {"ACCESS_GRANTED": "granted", "ACCESS_DENIED": "denied"}.get(m.group(2), "error"))
     return ev

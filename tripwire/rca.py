@@ -73,8 +73,15 @@ def ev_open_ports_exposed(ev: Evidence, src: str, allowed=(80, 443), **_):
 
 
 def ev_smb_admin_reached(ev: Evidence, src: str, **_):
-    paths = ev.smb_admin_paths(src)
-    return bool(paths), (f"tree-connect to {', '.join(paths)}" if paths else "no administrative share access seen")
+    """Bad only if the server actually granted an administrative share (or the outcome is unknown)."""
+    oc = ev.smb_admin_outcomes(src)
+    if not oc:
+        return False, "no administrative share access seen"
+    granted = [p for p, o in oc.items() if o == "granted"]
+    unknown = [p for p, o in oc.items() if o in (None, "unknown")]
+    if granted or unknown:
+        return True, f"server granted tree-connect to {', '.join(granted + unknown)}"
+    return False, "administrative shares were requested but the server refused: " + ", ".join(f"{p} ({o})" for p, o in oc.items())
 
 
 def ev_hidden_paths_exposed(ev: Evidence, src: str, **_):
@@ -107,9 +114,19 @@ def impact(kind: str, ev: Evidence, src: str) -> dict:
                     "(heuristic: SSH is encrypted, confirm in auth.log)"), "source": ev.source}
         return {"level": "none", "text": "No sign of a successful login in the network data", "source": ev.source}
     if kind == "smb_admin_reached":
-        p = ev.smb_admin_paths(src)
-        return ({"level": "probable", "text": f"Administrative share(s) reached: {', '.join(p)}", "source": ev.source}
-                if p else {"level": "none", "text": "No administrative share reached", "source": ev.source})
+        oc = ev.smb_admin_outcomes(src)
+        if not oc:
+            return {"level": "none", "text": "No administrative share requested", "source": ev.source}
+        granted = [p for p, o in oc.items() if o == "granted"]
+        refused = [f"{p} ({o})" for p, o in oc.items() if o in ("denied", "error")]
+        unknown = [p for p, o in oc.items() if o in (None, "unknown")]
+        if granted:
+            txt = "Server GRANTED access to " + ", ".join(granted) + (("; refused: " + ", ".join(refused)) if refused else "")
+            return {"level": "confirmed", "text": txt, "source": ev.source}
+        if refused and not unknown:
+            return {"level": "attempted", "text": "Administrative share(s) requested but refused by the server: " + ", ".join(refused),
+                    "source": ev.source}
+        return {"level": "probable", "text": "Administrative share(s) requested, outcome not observed: " + ", ".join(unknown or oc), "source": ev.source}
     if kind == "hidden_paths_found":
         h = ev.http_hits(src)
         return ({"level": "probable", "text": f"Fuzzing discovered {len(h)} reachable paths: " + ", ".join(u for u, _ in h[:6]), "source": ev.source}
@@ -282,7 +299,7 @@ def verify(causes: list[dict], ev: Evidence, src: str, conf_dir: Path = LAB_CONF
         shutil.rmtree(tmp)
     tmp.mkdir(parents=True)
     for n, t in hardened.items():
-        (tmp / n).write_text(t, encoding="utf-8")
+        (tmp / n).write_text(t, encoding="utf-8", newline=chr(10))
     pbs = load_playbooks()
     rows = []
     for c in causes:
@@ -308,13 +325,13 @@ def write_fixpack(rca: dict, conf_dir: Path = LAB_CONF) -> Path:
     for name, new in hardened.items():
         old = (conf_dir / name).read_text(encoding="utf-8") if (conf_dir / name).exists() else ""
         if old != new:
-            (d / name).write_text(new, encoding="utf-8")
+            (d / name).write_text(new, encoding="utf-8", newline=chr(10))
             diffs += list(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"a/{name}", f"b/{name}"))
-    (d / "changes.diff").write_text("".join(diffs), encoding="utf-8")
+    (d / "changes.diff").write_text("".join(diffs), encoding="utf-8", newline=chr(10))
     md = [f"# Fix pack for {rca['incident']} (source {rca['src']})", "",
           "Apply only to your own lab. Review the diff first.", ""]
     for c in rca["root_causes"]:
         md += [f"## {c['rank']}. {c['cause']}", f"*Confidence: {c['confidence']} | Mitigation {c['mitigation']} {c['mitigation_name']}*", "",
                f"- **Immediate:** {c['fix']['immediate']}", f"- **Short term:** {c['fix']['short_term']}", f"- **Long term:** {c['fix']['long_term']}", ""]
-    (d / "FIXES.md").write_text("\n".join(md), encoding="utf-8")
+    (d / "FIXES.md").write_text("\n".join(md), encoding="utf-8", newline=chr(10))
     return d

@@ -13,9 +13,11 @@ alert tcp any any -> $HOME_NET any (msg:"TRIPWIRE SCAN SYN sweep from one source
 # SSH password guessing - T1110.001 Password Guessing
 alert tcp any any -> $HOME_NET 22 (msg:"TRIPWIRE SSH password guessing: connection burst (L1)"; flow:to_server; flags:S,12; threshold:type both, track by_src, count 6, seconds 30; classtype:attempted-admin; sid:1000011; rev:1; metadata:mitre_technique_id T1110.001, mitre_tactic credential_access, tripwire_class ssh_bruteforce, tripwire_layer L1, tripwire_severity 6;)
 
-# SMB administrative share access - T1021.002 SMB/Windows Admin Shares  (IPC$ deliberately excluded)
-alert smb any any -> $HOME_NET any (msg:"TRIPWIRE SMB ADMIN$ share tree-connect (L1)"; flow:to_server,established; smb.share; content:"ADMIN$"; nocase; classtype:attempted-admin; sid:1000031; rev:1; metadata:mitre_technique_id T1021.002, mitre_tactic lateral_movement, tripwire_class smb_admin, tripwire_layer L1, tripwire_severity 8;)
-alert smb any any -> $HOME_NET any (msg:"TRIPWIRE SMB C$/D$/E$ drive share tree-connect (L1)"; flow:to_server,established; smb.share; pcre:"/\x5c[c-e]\x24$/i"; classtype:attempted-admin; sid:1000032; rev:1; metadata:mitre_technique_id T1021.002, mitre_tactic lateral_movement, tripwire_class smb_admin, tripwire_layer L1, tripwire_severity 8;)
+# SMB administrative share access - T1021.002 SMB/Windows Admin Shares
+# IPC$ is excluded (routine). The designated management subnet 10.0.3.0/24 is allowlisted by policy: only an
+# unexpected source role makes an administrative share request suspicious (see SMB_Detection_Report.md).
+alert smb ![10.0.3.0/24] any -> $HOME_NET any (msg:"TRIPWIRE SMB ADMIN$ share tree-connect (L1)"; flow:to_server,established; smb.share; content:"ADMIN$"; nocase; classtype:attempted-admin; sid:1000031; rev:1; metadata:mitre_technique_id T1021.002, mitre_tactic lateral_movement, tripwire_class smb_admin, tripwire_layer L1, tripwire_severity 8;)
+alert smb ![10.0.3.0/24] any -> $HOME_NET any (msg:"TRIPWIRE SMB C$/D$/E$ drive share tree-connect (L1)"; flow:to_server,established; smb.share; pcre:"/\x5c[c-e]\x24$/i"; classtype:attempted-admin; sid:1000032; rev:1; metadata:mitre_technique_id T1021.002, mitre_tactic lateral_movement, tripwire_class smb_admin, tripwire_layer L1, tripwire_severity 8;)
 
 # Web wordlist fuzzing - T1595.003 Wordlist Scanning
 alert http any any -> any any (msg:"TRIPWIRE WEB-FUZZ 404 burst to one client (L1)"; flow:established,to_client; http.stat_code; content:"404"; threshold:type both, track by_dst, count 15, seconds 10; classtype:web-application-attack; sid:1000041; rev:1; metadata:mitre_technique_id T1595.003, mitre_tactic reconnaissance, tripwire_class web_fuzz, tripwire_layer L1, tripwire_severity 3;)

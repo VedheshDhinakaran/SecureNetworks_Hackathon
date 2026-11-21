@@ -10,11 +10,11 @@ hypotheses:
     mitigation: M1050
     fix:
       immediate: "Review the discovered paths for exposed data; take sensitive content offline."
-      short_term: "Turn off autoindex and restrict /admin to the management subnet (allow/deny)."
+      short_term: "Turn off autoindex, deny dotfiles such as /.git, and restrict /admin and /backup to the management subnet (allow/deny). Found by live re-attack: rate limiting alone only hides these paths."
       long_term: "Keep backups and admin interfaces off the public web root; add authentication."
     snippet:
       - {op: replace, file: default.conf, old: "autoindex on;", new: "autoindex off;"}
-      - {op: replace, file: default.conf, old: "location /admin {", new: "location /admin {\n        allow 10.0.3.0/24;\n        deny all;"}
+      - {op: replace, file: default.conf, old: "    location /admin {", new: "    location ~ /\\. {\n        deny all;\n    }\n\n    location /backup {\n        allow 10.0.3.0/24;\n        deny all;\n    }\n\n    location /admin {\n        allow 10.0.3.0/24;\n        deny all;"}
   - id: web-no-rate-limit
     weight: 7
     cause: "The web server does not rate limit clients, so thousands of guesses per minute are accepted"

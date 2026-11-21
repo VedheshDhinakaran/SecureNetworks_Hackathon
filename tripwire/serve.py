@@ -53,6 +53,8 @@ class Tailer:
         if not self.path.exists():
             return []
         out = []
+        if self.path.stat().st_size < self.pos:      # file was truncated or rotated (sensor restart): start over
+            self.pos = 0
         with open(self.path, "rb") as fh:
             fh.seek(self.pos)
             data = fh.read()
