@@ -63,8 +63,20 @@ def detection_logic_md() -> str:
                 f"- **What is observed:** {c['observed']}",
                 f"- **Why it indicates the behavior:** {c['why']}"]
         if "l1" in c:
-            out.append(f"- **Layer 1 threshold:** {c['l1']['count']} events within {c['l1']['window']} s (Suricata sid {c['sid']})")
-            out.append(f"- **Layer 2 threshold:** {c['l2']['count']} events within {c['l2']['window']} s (Zeek script)")
+            l1, l2 = c["l1"], c["l2"]
+            out.append(f"- **Layer 1 (Suricata sid {c['sid']}, a rate rule):** {l1['count']} events within {l1['window']} s")
+            if cls == "web_fuzz":
+                out.append(f"- **Layer 2 (Zeek, contextual):** at least {l2['errors']} 403/404 replies AND at least {l2['count']} distinct failing paths "
+                           f"(query strings removed) AND an error ratio of at least {l2['ratio']}, in a sliding {l2['window']} s window per source-destination service")
+            elif cls == "scan":
+                out.append(f"- **Layer 2 (Zeek):** {l2['count']} distinct destination ports of one target within a sliding {l2['window']} s window "
+                           "(answered, refused or silently dropped probes all count)")
+            else:
+                out.append(f"- **Layer 2 (Zeek):** {l2['count']} new connections within {l2['window']} s")
+            if "attempts" in c:
+                a = c["attempts"]
+                out.append(f"- **Attempt layer (Zeek only):** {a['count']} INFERRED password attempts in failed SSH sessions within a sliding {a['window']} s window "
+                           "per source-destination pair; successful and unknown sessions count zero (an estimate from encrypted packet sizes, not ground truth)")
         else:
             out.append(f"- **Signature:** tree-connect to an administrative share (Suricata sids {c['sid']}, {c['sid_aux']}; Zeek notice)")
         out += [f"- **Known evasion:** {c['evasion']}",
@@ -95,6 +107,14 @@ def report_md(state: dict) -> str:
           "| Class.layer | Chosen | Safe band | Highest benign | Lowest attack | In band |", "|---|---|---|---|---|---|"]
     for k, v in state["sweep"].items():
         L.append(f"| {k} | {v['current']} | {v['band'][0]}-{v['band'][1]} | {v['max_benign']} ({v['worst_benign']}) | {v['min_attack']} ({v['weakest_attack']}) | {'yes' if v['in_band'] else 'NO'} |")
+    if state.get("real"):
+        engs = list(state["real"][0]["seen"])
+        L += ["", "## Real Docker-lab captures", "",
+              "Traffic recorded from real tools (hydra, nmap, ffuf, smbclient) against real servers, scored against ground truth.", "",
+              "| Capture | What happened | Expected | " + " | ".join(engs) + " | Verdict |", "|---|---|---|" + "---|" * len(engs) + "---|"]
+        for r in state["real"]:
+            cols = " | ".join(", ".join(r["seen"][e]) or "-" for e in engs)
+            L.append(f"| {r['name']} | {r['desc']} | {', '.join(r['expect']) or 'nothing'} | {cols} | {r['verdict']} |")
     L += ["", "## Evasion matrix", "", "| Case | Description | Caught by | Note |", "|---|---|---|---|"]
     for r in state["evasion"]:
         hit = [k for k, x in r["cells"].items() if x]

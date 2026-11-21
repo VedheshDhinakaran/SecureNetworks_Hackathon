@@ -18,8 +18,8 @@ from .evidence import Evidence, from_native, from_zeek
 
 IMAGES = {"suricata": "jasonish/suricata", "zeek": "zeek/zeek"}
 ZEEK_NOTES = {"Tripwire::Port_Scan": "scan", "Tripwire::SSH_Bruteforce": "ssh_bruteforce",
-              "Tripwire::Web_Fuzz": "web_fuzz", "Tripwire::SMB_Admin_Share": "smb_admin",
-              "Tripwire::SMB_Admin_Share_Result": "smb_admin"}
+              "Tripwire::Web_Fuzz": "web_fuzz", "Tripwire::HTTP_Fuzzing": "web_fuzz", "Tripwire::SMB_Admin_Share": "smb_admin",
+              "Tripwire::SMB_Admin_Share_Result": "smb_admin", "Tripwire::SSH_Auth_Failures": "ssh_bruteforce"}
 SMB_RESULTS = {"ACCESS_GRANTED": "granted", "ACCESS_DENIED": "denied", "OTHER_ERROR": "error"}
 
 

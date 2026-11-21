@@ -8,10 +8,10 @@
 # =====================================================================
 
 # Port scanning / service discovery - T1046 Network Service Discovery
-alert tcp any any -> $HOME_NET any (msg:"TRIPWIRE SCAN SYN sweep from one source (L1)"; flow:to_server; flags:S,12; threshold:type both, track by_src, count 30, seconds 5; classtype:network-scan; sid:1000001; rev:1; metadata:mitre_technique_id T1046, mitre_tactic discovery, tripwire_class scan, tripwire_layer L1, tripwire_severity 4;)
+alert tcp any any -> $HOME_NET any (msg:"TRIPWIRE SCAN SYN sweep from one source (L1)"; flow:to_server; flags:S,12; threshold:type both, track by_src, count 100, seconds 5; classtype:network-scan; sid:1000001; rev:1; metadata:mitre_technique_id T1046, mitre_tactic discovery, tripwire_class scan, tripwire_layer L1, tripwire_severity 4;)
 
 # SSH password guessing - T1110.001 Password Guessing
-alert tcp any any -> $HOME_NET 22 (msg:"TRIPWIRE SSH password guessing: connection burst (L1)"; flow:to_server; flags:S,12; threshold:type both, track by_src, count 6, seconds 30; classtype:attempted-admin; sid:1000011; rev:1; metadata:mitre_technique_id T1110.001, mitre_tactic credential_access, tripwire_class ssh_bruteforce, tripwire_layer L1, tripwire_severity 6;)
+alert tcp any any -> $HOME_NET 22 (msg:"TRIPWIRE SSH password guessing: connection burst (L1)"; flow:to_server; flags:S,12; threshold:type both, track by_src, count 20, seconds 30; classtype:attempted-admin; sid:1000011; rev:1; metadata:mitre_technique_id T1110.001, mitre_tactic credential_access, tripwire_class ssh_bruteforce, tripwire_layer L1, tripwire_severity 6;)
 
 # SMB administrative share access - T1021.002 SMB/Windows Admin Shares
 # IPC$ is excluded (routine). The designated management subnet 10.0.3.0/24 is allowlisted by policy: only an
@@ -20,6 +20,8 @@ alert smb ![10.0.3.0/24] any -> $HOME_NET any (msg:"TRIPWIRE SMB ADMIN$ share tr
 alert smb ![10.0.3.0/24] any -> $HOME_NET any (msg:"TRIPWIRE SMB C$/D$/E$ drive share tree-connect (L1)"; flow:to_server,established; smb.share; pcre:"/\x5c[c-e]\x24$/i"; classtype:attempted-admin; sid:1000032; rev:1; metadata:mitre_technique_id T1021.002, mitre_tactic lateral_movement, tripwire_class smb_admin, tripwire_layer L1, tripwire_severity 8;)
 
 # Web wordlist fuzzing - T1595.003 Wordlist Scanning
-alert http any any -> any any (msg:"TRIPWIRE WEB-FUZZ 404 burst to one client (L1)"; flow:established,to_client; http.stat_code; content:"404"; threshold:type both, track by_dst, count 15, seconds 10; classtype:web-application-attack; sid:1000041; rev:1; metadata:mitre_technique_id T1595.003, mitre_tactic reconnaissance, tripwire_class web_fuzz, tripwire_layer L1, tripwire_severity 3;)
+alert http any any -> any any (msg:"TRIPWIRE WEB-FUZZ 403/404 flood to one client (L1)"; flow:established,to_client; http.stat_code; pcre:"/^40[34]$/"; threshold:type both, track by_dst, count 150, seconds 10; classtype:web-application-attack; sid:1000041; rev:1; metadata:mitre_technique_id T1595.003, mitre_tactic reconnaissance, tripwire_class web_fuzz, tripwire_layer L1, tripwire_severity 3;)
+# Layer 1 is a RATE rule: Suricata cannot count distinct paths or an error ratio, so it only fires on a loud flood.
+# The contextual rule (distinct failing paths + error ratio) lives in the Zeek layer.
 # Auxiliary signal only: user agents are trivially spoofed (see evasion matrix).
 alert http any any -> $HOME_NET any (msg:"TRIPWIRE WEB-FUZZ known fuzzer user agent (aux)"; flow:established,to_server; http.user_agent; pcre:"/(fuzz faceless|gobuster|sqlmap|nikto|wfuzz|dirbuster)/i"; classtype:web-application-attack; sid:1000042; rev:1; metadata:mitre_technique_id T1595.003, mitre_tactic reconnaissance, tripwire_class web_fuzz, tripwire_layer L1, tripwire_severity 3;)

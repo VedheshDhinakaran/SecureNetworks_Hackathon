@@ -227,6 +227,13 @@ def sc_scan(cap, t, ip, ports=1000, pps=500.0):
     return t + ports / pps
 
 
+def sc_scan_list(cap, t, ip, plist, pps=20.0, state=None, openp=(22, 80, 445)):
+    """Probe an explicit list of ports. state forces every probe's answer: open | closed | filtered (silently dropped)."""
+    for i, p in enumerate(plist):
+        probe(cap, t + i / pps, ip, VICTIM, p, state or ("open" if p in openp else "closed"))
+    return t + len(plist) / pps
+
+
 def sc_ssh(cap, t, ip, n=60, interval=0.5, success=True, banner=b"SSH-2.0-libssh_0.10.5\r\n"):
     end = t
     for i in range(n):
@@ -404,6 +411,71 @@ def build_dataset(seed: int = 7) -> list[dict]:
     m.append(_save(c, "ev_admin_host_abuse", "evasion", ["smb_admin"], ["10.0.3.5"],
                    "An attacker who has compromised the designated admin host: allowlisted by design, invisible (known gap)"))
 
+    # -- HTTP scenarios from the teammate's independent study (HTTP_Detection_Report.md) ------------------
+    def http_list(i, ip, reqs, rps, ua=CHROME_UA):
+        c = cap(i)
+        cs = [Conn(c, T0, ip, VICTIM, 80).open() for _ in range(2)]
+        for k, (path, code) in enumerate(reqs):
+            http_get(cs[k % 2].at(T0 + k / rps), path, ua, code, 300 if code == 200 else 0)
+        for x in cs:
+            x.close()
+        return c
+
+    padded = [r for j in range(1, 61) for r in (("/", 200), ("/", 200), (f"/probe-path-{j}", 404))]
+    broken = [r for j in range(1, 61) for r in (("/", 200), ("/", 200), (f"/missing-asset-{j}.png", 404))]
+    m.append(_save(http_list(31, "10.0.2.70", [("/missing-image.png", 404)] * 120, 12), "hn_http_repeated_404", "hardneg", [], [],
+                   "120 requests for ONE missing image: many errors, one path"))
+    m.append(_save(http_list(32, "10.0.2.71", [(f"/missing-image.png?id={j}", 404) for j in range(1, 121)], 12), "hn_http_query_404", "hardneg", [], [],
+                   "120 requests for one missing image with a changing query string: many raw URLs, one real path"))
+    m.append(_save(http_list(33, "10.0.2.72", broken, 18), "hn_http_broken_app", "hardneg", [], [],
+                   "A broken application: 60 missing assets mixed with 120 successful requests (error ratio 0.33)"))
+    m.append(_save(http_list(34, "10.0.2.73", [(f"/test-{j % 24 + 1}", 404) for j in range(50)], 30), "hn_http_boundary_24paths", "hardneg", [], [],
+                   "50 errors spread over only 24 distinct paths: one path short of the threshold"))
+    m.append(_save(http_list(35, "10.0.1.92", [(f"/test-{j % 25 + 1}", 404) for j in range(50)], 30), "ev_http_boundary25", "evasion", ["web_fuzz"], ["10.0.1.92"],
+                   "50 errors over exactly 25 distinct paths: the smallest scan the contextual rule accepts"))
+    m.append(_save(http_list(36, "10.0.1.93", [(f"/fresh-path-{j}", 404) for j in range(1, 51)], 30), "ev_http_fuzz50", "evasion", ["web_fuzz"], ["10.0.1.93"],
+                   "A small 50-path wordlist scan: too few requests for the fast layer, caught by the contextual layer"))
+    m.append(_save(http_list(37, "10.0.1.94", [(f"/test-{j}", 404) for j in range(1, 50)], 30), "ev_http_boundary49", "evasion", ["web_fuzz"], ["10.0.1.94"],
+                   "49 distinct failing paths: one below the error threshold (known gap)"))
+    m.append(_save(http_list(38, "10.0.1.95", padded, 18), "ev_http_padded", "evasion", ["web_fuzz"], ["10.0.1.95"],
+                   "A wordlist scan padded with successful requests (error ratio 0.33): identical in shape to a broken application (known gap)"))
+    m.append(_save(http_list(39, "10.0.1.96", [(f"/{w}", 404) for w in ("admin", "backup", "login", "config", "nonexistent")], 30), "ev_http_small5", "evasion", ["web_fuzz"], ["10.0.1.96"],
+                   "A five-path probe: below any sensible volume threshold (known gap)"))
+
+    # -- SSH scenario from the teammate's independent study (SSH_Detection_Report.md) --------------------
+    c = cap(30)
+    for i in range(12):
+        ssh_session(c, T0 + i * 2.0, "10.0.2.62", b"SSH-2.0-OpenSSH_9.6\r\n", long_for=1.0)
+    m.append(_save(c, "hn_ssh_login_burst", "hardneg", [], [],
+                   "A script or a busy admin logs in successfully 12 times in 24 s: many connections, none failed"))
+
+    # -- scan scenarios from the teammate's independent study (Port_Scan_Detection_Report.md) ------------
+    c = cap(23); sc_scan_list(c, T0, "10.0.1.81", list(range(1001, 1015)), pps=20)
+    m.append(_save(c, "ev_small_scan", "evasion", ["scan"], ["10.0.1.81"],
+                   "Quick 14-port connect scan: too few probes for the fast layer, still above the port-cardinality threshold"))
+    c = cap(24); sc_scan_list(c, T0, "10.0.1.82", [22, 80, 445] + list(range(1001, 1013)), pps=20)
+    m.append(_save(c, "ev_mixed_scan", "evasion", ["scan"], ["10.0.1.82"],
+                   "Mixed scan: 12 closed ports plus 3 open ones (a rejection-only detector sees just 12)"))
+    c = cap(25); sc_scan_list(c, T0, "10.0.1.83", list(range(2001, 2011)), pps=1 / 8)
+    m.append(_save(c, "ev_slow_scan_10", "evasion", ["scan"], ["10.0.1.83"],
+                   "Slow 10-port scan, one probe every 8 s (82 s total): needs a 5-minute window and a threshold of 10"))
+    c = cap(26); sc_scan_list(c, T0, "10.0.1.84", list(range(2001, 2010)), pps=20)
+    m.append(_save(c, "ev_tiny_scan_9", "evasion", ["scan"], ["10.0.1.84"],
+                   "Nine-port scan, one below the threshold: a documented false negative (known gap)"))
+    c = cap(27); sc_scan_list(c, T0, "10.0.1.85", list(range(3001, 3041)), pps=40, state="filtered")
+    m.append(_save(c, "ev_filtered_scan", "evasion", ["scan"], ["10.0.1.85"],
+                   "Scan of a firewalled target: every probe is silently dropped, no rejection ever appears"))
+    c = cap(28); sc_scan_list(c, T0, "10.0.2.60", [1001] * 30, pps=20, state="closed")
+    m.append(_save(c, "hn_connection_retries", "hardneg", [], [],
+                   "A client retries a closed port 30 times in 1.5 s (service outage): many connections, one port"))
+    c = cap(29)
+    for i in range(30):
+        cn = Conn(c, T0 + i * 0.07, "10.0.2.61", VICTIM, 80).open()
+        http_get(cn, "/", CHROME_UA, 200, 500)
+        cn.close()
+    m.append(_save(c, "hn_rapid_web_requests", "hardneg", [], [],
+                   "A script makes 30 separate web requests in 2 s: many connections, one port"))
+
     # -- robustness grid: same attack at decreasing speed -----------------------------
     for cls, rates, count in (("scan", GRID_RATES["scan"], 60), ("ssh_bruteforce", GRID_RATES["ssh_bruteforce"], 40),
                               ("web_fuzz", GRID_RATES["web_fuzz"], 80)):
@@ -411,7 +483,8 @@ def build_dataset(seed: int = 7) -> list[dict]:
             ip = f"10.0.4.{(len(m) % 200) + 10}"
             c = Cap(seed * 1000 + len(m))
             if cls == "scan":
-                sc_scan(c, T0, ip, ports=count, pps=rate)
+                # fast rates need enough probes to reach the layer-1 SYN threshold (100 in 5 s); slow rates only need 10+ ports
+                sc_scan(c, T0, ip, ports=300 if rate >= 5 else count, pps=rate)
             elif cls == "ssh_bruteforce":
                 sc_ssh(c, T0, ip, n=count, interval=1 / rate, success=False)
             else:
@@ -424,7 +497,7 @@ def build_dataset(seed: int = 7) -> list[dict]:
 
 
 GRID_RATES = {
-    "scan": [500, 50, 5, 0.5, 0.1, 0.03],
+    "scan": [500, 50, 5, 0.5, 0.1, 0.02],
     "ssh_bruteforce": [2.0, 0.3, 0.1, 0.05, 0.02],
     "web_fuzz": [100, 20, 3, 1, 0.3, 0.05],
 }

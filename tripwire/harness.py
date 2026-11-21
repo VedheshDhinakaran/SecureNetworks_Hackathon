@@ -16,7 +16,7 @@ from .gen import GRID_RATES
 
 CORE = ("attack", "chain")
 NEG = ("benign", "hardneg")
-KNOWN_GAPS = {"ev_distributed_ssh", "ev_admin_host_abuse"}          # honest limitation: per-source counting cannot see it
+KNOWN_GAPS = {"ev_distributed_ssh", "ev_admin_host_abuse", "ev_tiny_scan_9", "ev_http_boundary49", "ev_http_padded", "ev_http_small5"}          # honest limitation: per-source counting cannot see it
 COLS = [("suricata", "L1"), ("suricata", "UA"), ("zeek", "L2"), ("native", "L1"), ("native", "L2"), ("native", "UA")]
 
 

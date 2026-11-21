@@ -46,9 +46,11 @@ def suricata_rules() -> str:
             f'{_meta(c, "smb_admin", "L1")};)', ""]
     c = k["web_fuzz"]
     out += [f"# {c['title']} - {c['technique']} {c['technique_name']}",
-            f'alert http any any -> any any (msg:"TRIPWIRE WEB-FUZZ 404 burst to one client (L1)"; flow:established,to_client; '
-            f'http.stat_code; content:"404"; threshold:type both, track by_dst, count {c["l1"]["count"]}, seconds {c["l1"]["window"]}; '
+            f'alert http any any -> any any (msg:"TRIPWIRE WEB-FUZZ 403/404 flood to one client (L1)"; flow:established,to_client; '
+            f'http.stat_code; pcre:"/^40[34]$/"; threshold:type both, track by_dst, count {c["l1"]["count"]}, seconds {c["l1"]["window"]}; '
             f'classtype:web-application-attack; sid:{c["sid"]}; rev:1; {_meta(c, "web_fuzz", "L1")};)',
+            f'# Layer 1 is a RATE rule: Suricata cannot count distinct paths or an error ratio, so it only fires on a loud flood.',
+            f'# The contextual rule (distinct failing paths + error ratio) lives in the Zeek layer.',
             f'# Auxiliary signal only: user agents are trivially spoofed (see evasion matrix).',
             f'alert http any any -> $HOME_NET any (msg:"TRIPWIRE WEB-FUZZ known fuzzer user agent (aux)"; flow:established,to_server; '
             f'http.user_agent; pcre:"/(fuzz faceless|gobuster|sqlmap|nikto|wfuzz|dirbuster)/i"; '
@@ -71,18 +73,51 @@ redef LogAscii::use_json = T;
 module Tripwire;
 
 export {
-    redef enum Notice::Type += { Port_Scan, SSH_Bruteforce, Web_Fuzz, SMB_Admin_Share, SMB_Admin_Share_Result };
+    redef enum Notice::Type += { Port_Scan, SSH_Bruteforce, SSH_Auth_Failures, HTTP_Fuzzing, SMB_Admin_Share, SMB_Admin_Share_Result };
 }
+
+# SSH password guessing, attempt-weighted (design from SSH_Detection_Report.md). SSH is encrypted, so Zeek INFERS the
+# outcome and the number of authentication attempts of each session from packet sizes. Tools like hydra reuse one
+# connection for many guesses, so counting connections undercounts them. Only the final result of FAILED sessions
+# counts; a successful or unknown (no inferred result) session contributes zero.
+const ssh_att_window: interval = @@SSHATT_WINDOW@@sec;
+type FailedSession: record {
+    ts: time;
+    attempts: count;
+};
+global ssh_failures: table[addr, addr] of table[string] of FailedSession &write_expire=1hr;
 
 # Designated administration hosts: allowlisted by policy, not by attacker address (SMB_Detection_Report.md, H3).
 const mgmt_net: subnet = @@MGMT_NET@@;
 # admin-share requests waiting for the server's answer: (connection uid, SMB message id) -> requested path
 global smb_pending: table[string, count] of string &write_expire=1min;
 
+# Port scan state (design from Port_Scan_Detection_Report.md): for every (source, destination) PAIR, the last time each
+# destination port was probed. Entries older than the window are pruned on every event, so the window slides
+# instead of resetting in blocks. A port counts whether the probe was refused, answered or silently dropped.
+const scan_window: interval = @@SCAN_WINDOW@@sec;
+global scan_seen: table[addr, addr] of table[port] of time &write_expire=1hr;
+# ports a destination actively refused (TCP RST), kept only to report how many probes were rejected
+global scan_rejected: table[addr, addr] of set[port] &write_expire=1hr;
+
 # per-source state that forgets itself after the window
-global scan_ports: table[addr] of set[port] &create_expire=@@SCAN_WINDOW@@sec;
 global ssh_conns:  table[addr] of count    &create_expire=@@SSH_WINDOW@@sec;
-global fuzz_404s:  table[addr] of count    &create_expire=@@FUZZ_WINDOW@@sec;
+
+# HTTP wordlist fuzzing, contextual (design from HTTP_Detection_Report.md). For every (source, destination, port) service a
+# sliding window keeps each GET transaction: its path with the query string removed and whether it failed (403/404). The
+# alert needs ALL of: enough errors, enough DISTINCT failing paths, and a majority of the client's requests failing.
+# Volume alone is not enough: repeated requests for one missing asset, a changing query string and a broken application
+# are all benign shapes that must stay silent.
+const http_window: interval = @@HTTP_WINDOW@@sec;
+const http_error_threshold: count = @@HTTP_ERRORS@@;
+const http_path_threshold: count = @@HTTP_PATHS@@;
+const http_min_error_ratio: double = @@HTTP_RATIO@@;
+type HTTPObservation: record {
+    ts: time;
+    path: string;
+    is_error: bool;
+};
+global http_activity: table[addr, addr, port] of table[string] of HTTPObservation &write_expire=1hr;
 
 event new_connection(c: connection)
     {
@@ -92,15 +127,39 @@ event new_connection(c: connection)
         return;
 
     local src = c$id$orig_h;
+    local dst = c$id$resp_h;
 
-    # T1046: many distinct destination ports from one source
-    if ( src !in scan_ports )
-        scan_ports[src] = set();
-    add scan_ports[src][c$id$resp_p];
-    if ( |scan_ports[src]| == @@SCAN_COUNT@@ )
+    # T1046: many distinct destination ports of ONE target from one source, inside a sliding window
+    local now = network_time();
+    local recent: table[port] of time = table();
+    if ( [src, dst] in scan_seen )
+        recent = scan_seen[src, dst];
+    local stale: set[port] = set();
+    for ( sp in recent )
+        {
+        if ( now - recent[sp] > scan_window )
+            add stale[sp];
+        }
+    for ( old_port in stale )
+        delete recent[old_port];
+    recent[c$id$resp_p] = now;
+    scan_seen[src, dst] = recent;
+
+    if ( |recent| >= @@SCAN_COUNT@@ )
+        {
+        local refused = 0;
+        if ( [src, dst] in scan_rejected )
+            {
+            for ( rp in recent )
+                {
+                if ( rp in scan_rejected[src, dst] )
+                    ++refused;
+                }
+            }
         NOTICE([$note=Port_Scan, $conn=c,
-                $msg=fmt("%s probed %d distinct ports within @@SCAN_WINDOW@@s", src, @@SCAN_COUNT@@),
-                $identifier=cat(src), $suppress_for=10min]);
+                $msg=fmt("%s probed %d distinct ports of %s within @@SCAN_WINDOW@@s (%d refused)", src, |recent|, dst, refused),
+                $identifier=fmt("%s:%s", src, dst), $suppress_for=scan_window]);
+        }
 
     # T1110.001: many new SSH connections from one source
     if ( c$id$resp_p == 22/tcp )
@@ -115,19 +174,98 @@ event new_connection(c: connection)
         }
     }
 
-# T1595.003: many 404 responses to one client
-event http_reply(c: connection, version: string, code: count, reason: string)
+# T1110.001: inferred authentication attempts inside FAILED sessions, in a sliding window per source-destination pair
+event ssh_auth_result(c: connection, result: bool, auth_attempts: count)
     {
-    if ( code != 404 )
+    if ( result || auth_attempts == 0 )
         return;
+
     local src = c$id$orig_h;
-    if ( src !in fuzz_404s )
-        fuzz_404s[src] = 0;
-    ++fuzz_404s[src];
-    if ( fuzz_404s[src] == @@FUZZ_COUNT@@ )
-        NOTICE([$note=Web_Fuzz, $conn=c,
-                $msg=fmt("%s received %d HTTP 404 responses within @@FUZZ_WINDOW@@s", src, @@FUZZ_COUNT@@),
-                $identifier=cat(src), $suppress_for=10min]);
+    local dst = c$id$resp_h;
+    local now = network_time();
+    local recent: table[string] of FailedSession = table();
+    if ( [src, dst] in ssh_failures )
+        recent = ssh_failures[src, dst];
+
+    local stale: set[string] = set();
+    for ( uid in recent )
+        {
+        if ( now - recent[uid]$ts > ssh_att_window )
+            add stale[uid];
+        }
+    for ( old_uid in stale )
+        delete recent[old_uid];
+
+    recent[c$uid] = [$ts=now, $attempts=auth_attempts];
+    ssh_failures[src, dst] = recent;
+
+    local total: count = 0;
+    for ( session in recent )
+        total += recent[session]$attempts;
+
+    if ( total >= @@SSHATT_COUNT@@ )
+        NOTICE([$note=SSH_Auth_Failures, $conn=c,
+                $msg=fmt("T1110.001: %d inferred auth attempts across %d failed SSH sessions from %s within @@SSHATT_WINDOW@@s", total, |recent|, src),
+                $identifier=fmt("%s:%s", src, dst), $suppress_for=ssh_att_window]);
+    }
+
+# context for the scan alert: which probes the target actively refused (TCP RST, conn_state REJ)
+event connection_rejected(c: connection)
+    {
+    if ( [c$id$orig_h, c$id$resp_h] !in scan_rejected )
+        scan_rejected[c$id$orig_h, c$id$resp_h] = set();
+    add scan_rejected[c$id$orig_h, c$id$resp_h][c$id$resp_p];
+    }
+
+# T1595.003: contextual wordlist-fuzzing detection over parsed HTTP transactions
+event HTTP::log_http(rec: HTTP::Info)
+    {
+    if ( ! rec?$method || ! rec?$uri || ! rec?$status_code )
+        return;
+    if ( rec$method != "GET" )
+        return;
+
+    local src = rec$id$orig_h;
+    local dst = rec$id$resp_h;
+    local dest_port = rec$id$resp_p;
+    local now = network_time();
+    local path = sub(rec$uri, /\?.*$/, "");
+    local is_error = rec$status_code == 403 || rec$status_code == 404;
+
+    local recent: table[string] of HTTPObservation = table();
+    if ( [src, dst, dest_port] in http_activity )
+        recent = http_activity[src, dst, dest_port];
+
+    local stale: set[string] = set();
+    for ( key in recent )
+        {
+        if ( now - recent[key]$ts > http_window )
+            add stale[key];
+        }
+    for ( old_key in stale )
+        delete recent[old_key];
+
+    local transaction = fmt("%s:%d", rec$uid, rec$trans_depth);
+    recent[transaction] = [$ts=now, $path=path, $is_error=is_error];
+    http_activity[src, dst, dest_port] = recent;
+
+    local errors: count = 0;
+    local unique_paths: set[string] = set();
+    for ( entry in recent )
+        {
+        if ( recent[entry]$is_error )
+            {
+            ++errors;
+            add unique_paths[recent[entry]$path];
+            }
+        }
+    local ratio = count_to_double(errors) / count_to_double(|recent|);
+
+    if ( errors >= http_error_threshold && |unique_paths| >= http_path_threshold && ratio >= http_min_error_ratio )
+        NOTICE([$note=HTTP_Fuzzing, $uid=rec$uid, $id=rec$id, $src=src, $dst=dst, $p=dest_port,
+                $msg=fmt("T1595.003: %d errors, %d distinct paths, %d GET requests, error ratio %.2f within @@HTTP_WINDOW@@s",
+                         errors, |unique_paths|, |recent|, ratio),
+                $identifier=fmt("%s:%s:%s", src, dst, dest_port), $suppress_for=http_window]);
     }
 
 # T1021.002: tree-connect to an administrative share (IPC$ is routine and excluded).
@@ -175,8 +313,10 @@ def zeek_script() -> str:
     rep = {
         "@@SCAN_WINDOW@@": k["scan"]["l2"]["window"], "@@SCAN_COUNT@@": k["scan"]["l2"]["count"],
         "@@SSH_WINDOW@@": k["ssh_bruteforce"]["l2"]["window"], "@@SSH_COUNT@@": k["ssh_bruteforce"]["l2"]["count"],
-        "@@FUZZ_WINDOW@@": k["web_fuzz"]["l2"]["window"], "@@FUZZ_COUNT@@": k["web_fuzz"]["l2"]["count"],
+        "@@HTTP_WINDOW@@": k["web_fuzz"]["l2"]["window"], "@@HTTP_ERRORS@@": k["web_fuzz"]["l2"]["errors"],
+        "@@HTTP_PATHS@@": k["web_fuzz"]["l2"]["count"], "@@HTTP_RATIO@@": k["web_fuzz"]["l2"]["ratio"],
         "@@HOME_NET@@": cat["meta"]["home_net"], "@@MGMT_NET@@": cat["meta"]["mgmt_subnet"],
+        "@@SSHATT_WINDOW@@": k["ssh_bruteforce"]["attempts"]["window"], "@@SSHATT_COUNT@@": k["ssh_bruteforce"]["attempts"]["count"],
     }
     s = ZEEK_TEMPLATE
     for a, b in rep.items():

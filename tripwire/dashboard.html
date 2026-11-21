@@ -159,11 +159,20 @@ function chart(v) {
     <text x="${lx(v.current) + 4}" y="${T + 11}" style="fill:#e7b341">chosen ${v.current}</text>
     ${[1, 10, 100, 1000].map(t => `<text x="${lx(t) - (t === 1000 ? 22 : 6)}" y="${H - 8}">${t}</text>`).join('')}<text x="2" y="${ly(1) + 4}">1</text><text x="2" y="${ly(0) + 4}">0</text></svg>`;
 }
+function realTable() {
+  if (!S.real || !S.real.length) return '';
+  const engs = Object.keys(S.real[0].seen);
+  const vc = v => /MISSED|FALSE/.test(v) ? 'bad' : (v === 'known gap' ? 'warn' : 'ok');
+  return `<div class="card" style="margin-top:14px"><h2>Real Docker-lab captures</h2><p class="mute">Traffic from real tools (hydra, nmap, ffuf, smbclient) against real servers, scored against ground truth. Zeek infers SSH password attempts from encrypted sessions, which only works on genuine SSH traffic.</p>
+  <table><tr><th>Capture</th><th>What happened</th><th>Expected</th>${engs.map(e => `<th>${esc(e)}</th>`).join('')}<th>Verdict</th></tr>
+  ${S.real.map(r => `<tr><td class="mono">${esc(r.name)}</td><td>${esc(r.desc)}</td><td>${esc(r.expect.join(', ') || 'nothing')}</td>${engs.map(e => `<td class="mono">${esc(r.seen[e].join(', ') || '-')}</td>`).join('')}<td><span class="pill ${vc(r.verdict)}">${esc(r.verdict)}</span></td></tr>`).join('')}</table></div>`;
+}
 function quality() {
   const rows = Object.entries(S.score.engines).flatMap(([en, per]) => Object.entries(per).map(([c, v]) =>
     `<tr><td>${esc(en)}</td><td>${esc(c)}</td><td>${v.tp}/${v.positives}</td><td>${pct(v.recall)}</td><td>${pct(v.precision)}</td><td>${v.fp_alerts}</td><td>${v.ttd_median_s == null ? '-' : v.ttd_median_s + ' s'}</td></tr>`)).join('');
   $('#main').innerHTML = `<div class="card"><h2>Measured detection quality</h2><p class="mute">Attacks: core captures. False alerts counted over ${S.score.neg_pcaps} benign and hard-negative captures (${S.score.neg_hours} h of traffic).</p>
   <table><tr><th>Engine</th><th>Class</th><th>Detected</th><th>Recall</th><th>Precision</th><th>False alerts</th><th>Median time to detect</th></tr>${rows}</table></div>
+  ${realTable()}
   <h3>Threshold sweep: why each threshold was chosen</h3>
   <p class="mute">Blue = recall, green = precision across a ladder of thresholds. The green band is the safe range: above the noisiest benign behavior, below the weakest real attack. The yellow line is the threshold in use.</p>
   <div class="grid g2">${Object.values(S.sweep).map(v => `<div class="card">${chart(v)}<div class="mute">safe band ${v.band[0]}&ndash;${v.band[1]} &middot; noisiest benign: ${esc(v.worst_benign)} (${v.max_benign}) &middot; weakest attack: ${esc(v.weakest_attack)} (${v.min_attack})</div></div>`).join('')}</div>`;

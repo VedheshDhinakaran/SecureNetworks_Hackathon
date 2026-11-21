@@ -2,11 +2,13 @@ title: SSH Password Guessing From One Source
 id: 5b1f3c0e-7a61-4b52-9d6a-0c1d2e3f4a01
 status: experimental
 description: >
-  Log-based twin of the Tripwire network rule for T1110.001. Many failed SSH password
-  attempts from one address in a short time. Works from sshd auth logs, so it still sees
-  attacks the encrypted network traffic cannot describe (success or failure).
+  Log-based twin of the Tripwire network rule for T1110.001: eight failed SSH password
+  attempts from one address in two minutes (the same 8 / 2 min policy as the Zeek
+  attempt-weighted rule, adapted from the example in Wazuh rule 5712). Works from sshd auth
+  logs, so it sees the exact attempt count that encrypted network traffic can only estimate.
 references:
   - detections/catalog.yml
+  - SSH_Detection_Report.md
 author: Tripwire team
 date: 2026/11/21
 tags:
@@ -18,12 +20,13 @@ logsource:
 detection:
   selection:
     message|contains: 'Failed password for'
-  timeframe: 1m
-  condition: selection | count() by src_ip > 5
+  timeframe: 2m
+  condition: selection | count() by src_ip > 7
 fields:
   - src_ip
   - user
 falsepositives:
-  - Users mistyping a password a few times
+  - Users mistyping a password a few times (fewer than eight in two minutes)
+  - Stale credentials in automation or a misconfigured service retrying
   - Vulnerability scanners run by the security team
 level: high

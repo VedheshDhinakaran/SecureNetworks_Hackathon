@@ -1,0 +1,147 @@
+[
+ {
+  "name": "lab_benign",
+  "expect": [],
+  "kind": "benign",
+  "desc": "Real benign traffic: browsing, ordinary SSH, file share, monitoring polls (82 connections)"
+ },
+ {
+  "name": "lab_attack",
+  "expect": [
+   "web_fuzz",
+   "scan",
+   "ssh_bruteforce",
+   "smb_admin"
+  ],
+  "kind": "attack",
+  "desc": "Real kill chain from the Kali attacker: ffuf, nmap, hydra, smbclient"
+ },
+ {
+  "name": "ssh-hydra",
+  "expect": [
+   "ssh_bruteforce"
+  ],
+  "kind": "attack",
+  "desc": "Real hydra, 12 wrong passwords, 2 tasks: reuses connections for several guesses"
+ },
+ {
+  "name": "ssh-control",
+  "expect": [],
+  "kind": "benign",
+  "desc": "Two mistyped passwords then three successful logins"
+ },
+ {
+  "name": "ssh-boundary7",
+  "expect": [
+   "ssh_bruteforce"
+  ],
+  "kind": "evasion",
+  "known_gap": true,
+  "desc": "Seven failed logins, one below the threshold of eight attempts"
+ },
+ {
+  "name": "ssh-boundary8-success",
+  "expect": [
+   "ssh_bruteforce"
+  ],
+  "kind": "attack",
+  "desc": "Eight failed logins followed by one successful login"
+ },
+ {
+  "name": "ssh-normal-burst",
+  "expect": [],
+  "kind": "benign",
+  "desc": "Twelve successful logins in a row: many connections, none failed"
+ },
+ {
+  "name": "ssh-slow",
+  "expect": [
+   "ssh_bruteforce"
+  ],
+  "kind": "attack",
+  "desc": "Eight failed logins, five seconds apart"
+ },
+ {
+  "name": "http-ffuf150",
+  "expect": [
+   "web_fuzz"
+  ],
+  "kind": "attack",
+  "desc": "Real ffuf, 150 distinct paths at 30 req/s with a browser user agent"
+ },
+ {
+  "name": "http-ffuf60",
+  "expect": [
+   "web_fuzz"
+  ],
+  "kind": "attack",
+  "desc": "Real ffuf, a smaller 60-path wordlist"
+ },
+ {
+  "name": "http-curl50",
+  "expect": [
+   "web_fuzz"
+  ],
+  "kind": "attack",
+  "desc": "50 distinct missing paths from the workstation (a different source address)"
+ },
+ {
+  "name": "http-repeated",
+  "expect": [],
+  "kind": "benign",
+  "desc": "120 requests for one missing image: many errors, one path"
+ },
+ {
+  "name": "http-query",
+  "expect": [],
+  "kind": "benign",
+  "desc": "120 requests for one missing image with a changing query string"
+ },
+ {
+  "name": "http-normal",
+  "expect": [],
+  "kind": "benign",
+  "desc": "120 ordinary successful requests"
+ },
+ {
+  "name": "http-broken-app",
+  "expect": [],
+  "kind": "benign",
+  "desc": "A broken application: 60 missing assets mixed with 120 successful requests"
+ },
+ {
+  "name": "http-padded-scan",
+  "expect": [
+   "web_fuzz"
+  ],
+  "kind": "evasion",
+  "known_gap": true,
+  "desc": "A scan padded with successful requests (error ratio 0.33): looks like a broken application"
+ },
+ {
+  "name": "http-boundary49",
+  "expect": [
+   "web_fuzz"
+  ],
+  "kind": "evasion",
+  "known_gap": true,
+  "desc": "49 distinct failing paths, one below the error threshold"
+ },
+ {
+  "name": "http-boundary24paths",
+  "expect": [
+   "web_fuzz"
+  ],
+  "kind": "evasion",
+  "known_gap": true,
+  "desc": "50 errors over only 24 distinct paths, one short of the path threshold"
+ },
+ {
+  "name": "http-boundary25paths",
+  "expect": [
+   "web_fuzz"
+  ],
+  "kind": "attack",
+  "desc": "50 errors over exactly 25 distinct paths: the smallest accepted scan"
+ }
+]

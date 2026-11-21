@@ -44,9 +44,11 @@ class Facts:
     t1: float = 0.0
     syn: list = field(default_factory=list)        # (ts, src, dst, dport)
     synack: list = field(default_factory=list)     # (ts, client, server, sport)
+    rst: set = field(default_factory=set)          # (client, server, sport) probes the server refused
     http_req: list = field(default_factory=list)   # (ts, client, path, ua)
     http_resp: list = field(default_factory=list)  # (ts, client, code)
     smb: list = field(default_factory=list)        # (ts, src, share_path, sport, message_id)
+    http_tx: list = field(default_factory=list)    # (ts, client, server, dport, path, status) request paired with its response
     smb_out: dict = field(default_factory=dict)    # (client, sport, message_id) -> NTSTATUS of the tree-connect reply
     ssh_flows: dict = field(default_factory=dict)  # (src, sport) -> [first, last, bytes]
 
@@ -59,6 +61,7 @@ def parse_pcap(path: str | Path) -> Facts:
     if path in _CACHE:
         return _CACHE[path]
     f = Facts(name=Path(path).stem)
+    pending: dict = defaultdict(deque)             # (client, server, client port) -> requests awaiting their response
     first = last = None
     with PcapReader(path) as rd:
         for pkt in rd:
@@ -74,6 +77,8 @@ def parse_pcap(path: str | Path) -> Facts:
                 f.syn.append((ts, ip.src, ip.dst, tcp.dport))
             elif flags & 0x12 == 0x12:
                 f.synack.append((ts, ip.dst, ip.src, tcp.sport))
+            elif flags & 0x14 == 0x14:                     # RST+ACK from the server: the probe was refused (Zeek: REJ)
+                f.rst.add((ip.dst, ip.src, tcp.sport))
             if tcp.dport == 22 or tcp.sport == 22:
                 client, sport = (ip.src, tcp.sport) if tcp.dport == 22 else (ip.dst, tcp.dport)
                 fl = f.ssh_flows.setdefault((client, sport), [ts, ts, 0])
@@ -87,11 +92,17 @@ def parse_pcap(path: str | Path) -> Facts:
                 m = re.search(rb"User-Agent: ([^\r\n]*)", rest, re.I)
                 if m:
                     ua = m.group(1).decode("latin1")
-                f.http_req.append((ts, ip.src, line.split(b" ")[1].decode("latin1"), ua))
+                uri = line.split(b" ")[1].decode("latin1")
+                f.http_req.append((ts, ip.src, uri, ua))
+                pending[(ip.src, ip.dst, tcp.sport)].append((uri, tcp.dport))
             elif payload.startswith(b"HTTP/1."):
                 try:
                     code = int(payload[9:12])
                     f.http_resp.append((ts, ip.dst, code))
+                    q = pending.get((ip.dst, ip.src, tcp.dport))
+                    if q:
+                        uri, dport = q.popleft()
+                        f.http_tx.append((ts, ip.dst, ip.src, dport, uri, code))
                 except ValueError:
                     pass
             elif (tcp.dport == 445 or tcp.sport == 445) and len(payload) > 70 and payload[4:8] == SMB2_MAGIC:
@@ -163,6 +174,53 @@ def unique_cross(items: list[tuple[float, object]], count: int, window: float):
     return None
 
 
+# ------------------------------------------------------------ contextual HTTP rule (design: HTTP_Detection_Report.md)
+HTTP_ERRORS = (403, 404)
+
+
+def norm_path(uri: str) -> str:
+    """Strip the query string so a changing ?id=N is not mistaken for a new resource."""
+    return uri.split("?", 1)[0]
+
+
+def http_context(tx: list, window: float, errors_min: int, paths_min: int, ratio_min: float) -> tuple:
+    """Slide a window over ONE (client, server, port) group's GET transactions [(ts, path, status)], sorted by time.
+    Returns (first timestamp at which errors, distinct failing paths and error ratio all meet their thresholds,
+    that state, and the peak distinct-failing-path count among windows that meet the error and ratio gates)."""
+    dq: deque = deque()
+    err = 0
+    paths: dict = defaultdict(int)
+    first = None
+    state = None
+    peak = 0
+    for ts, path, status in sorted(tx):
+        is_err = status in HTTP_ERRORS
+        dq.append((ts, path, is_err))
+        if is_err:
+            err += 1
+            paths[path] += 1
+        while dq and ts - dq[0][0] > window:
+            _, op, oe = dq.popleft()
+            if oe:
+                err -= 1
+                paths[op] -= 1
+                if paths[op] == 0:
+                    del paths[op]
+        ratio = err / len(dq)
+        if err >= errors_min and ratio >= ratio_min:
+            peak = max(peak, len(paths))
+            if first is None and len(paths) >= paths_min:
+                first, state = ts, {"errors": err, "paths": len(paths), "gets": len(dq), "ratio": round(ratio, 2)}
+    return first, state, peak
+
+
+def http_groups(f: "Facts") -> dict:
+    g: dict = defaultdict(list)
+    for ts, cl, sv, dp, uri, status in f.http_tx:
+        g[(cl, sv, dp)].append((ts, norm_path(uri), status))
+    return g
+
+
 # ------------------------------------------------------------ features (sweep)
 def _in_home(ip: str, home_prefix: str) -> bool:
     return ip.startswith(home_prefix)
@@ -179,7 +237,7 @@ def features(f: Facts, home_prefix: str = "10.0.0.") -> dict[str, dict[str, int]
         if not _in_home(d, home_prefix):
             continue
         by_src[s].append(ts)
-        ports[s].append((ts, dp))
+        ports[(s, d)].append((ts, dp))
         if dp == 22:
             ssh[s].append(ts)
     w = cat["scan"]
@@ -190,11 +248,12 @@ def features(f: Facts, home_prefix: str = "10.0.0.") -> dict[str, dict[str, int]
     out["ssh_bruteforce"]["L2"] = max((window_max(v, w["l2"]["window"]) for v in ssh.values()), default=0)
     miss = defaultdict(list)
     for ts, cl, code in f.http_resp:
-        if code == 404:
+        if code in HTTP_ERRORS:
             miss[cl].append(ts)
     w = cat["web_fuzz"]
     out["web_fuzz"]["L1"] = max((window_max(v, w["l1"]["window"]) for v in miss.values()), default=0)
-    out["web_fuzz"]["L2"] = max((window_max(v, w["l2"]["window"]) for v in miss.values()), default=0)
+    l2 = w["l2"]
+    out["web_fuzz"]["L2"] = max((http_context(tx, l2["window"], l2["errors"], 10 ** 9, l2["ratio"])[2] for tx in http_groups(f).values()), default=0)
     out["smb_admin"]["L1"] = out["smb_admin"]["L2"] = sum(1 for t in f.smb if ADMIN_SHARE_RE.search(t[2]))
     return out
 
@@ -216,7 +275,7 @@ def detect(f: Facts, th: dict | None = None, home_prefix: str = "10.0.0.") -> li
     for ts, s, d, dp in f.syn:
         if _in_home(d, home_prefix):
             by_src[s].append(ts)
-            ports[s].append((ts, dp))
+            ports[(s, d)].append((ts, dp))              # distinct ports are counted per source-destination PAIR
             if dp == 22:
                 ssh[s].append(ts)
 
@@ -229,11 +288,11 @@ def detect(f: Facts, th: dict | None = None, home_prefix: str = "10.0.0.") -> li
         t = window_cross(v, n, w)
         if t is not None:
             ev.append(_ev(t, "L1", "scan", cat, src, victim, 0, "NATIVE-SCAN-L1", "SYN sweep", f"{n}+ SYNs in {w}s", f.name))
-    for src, v in ports.items():
+    for (src, dst), v in ports.items():
         n, w = p("scan", "L2")
         t = unique_cross(v, n, w)
         if t is not None:
-            ev.append(_ev(t, "L2", "scan", cat, src, victim, 0, "NATIVE-SCAN-L2", "Many distinct ports", f"{n}+ ports in {w}s", f.name))
+            ev.append(_ev(t, "L2", "scan", cat, src, dst, 0, "NATIVE-SCAN-L2", "Many distinct ports", f"{n}+ distinct ports in {w}s", f.name))
     for src, v in ssh.items():
         for layer in ("L1", "L2"):
             n, w = p("ssh_bruteforce", layer)
@@ -242,14 +301,19 @@ def detect(f: Facts, th: dict | None = None, home_prefix: str = "10.0.0.") -> li
                 ev.append(_ev(t, layer, "ssh_bruteforce", cat, src, victim, 22, f"NATIVE-SSH-{layer}", "SSH connection rate", f"{n}+ SSH conns in {w}s", f.name))
     miss = defaultdict(list)
     for ts, cl, code in f.http_resp:
-        if code == 404:
+        if code in HTTP_ERRORS:
             miss[cl].append(ts)
-    for src, v in miss.items():
-        for layer in ("L1", "L2"):
-            n, w = p("web_fuzz", layer)
-            t = window_cross(v, n, w)
-            if t is not None:
-                ev.append(_ev(t, layer, "web_fuzz", cat, src, victim, 80, f"NATIVE-FUZZ-{layer}", "404 burst", f"{n}+ 404s in {w}s", f.name))
+    for src, v in miss.items():                      # layer 1: a loud flood of 403/404 replies (a RATE rule)
+        n, w = p("web_fuzz", "L1")
+        t = window_cross(v, n, w)
+        if t is not None:
+            ev.append(_ev(t, "L1", "web_fuzz", cat, src, victim, 80, "NATIVE-FUZZ-L1", "403/404 flood", f"{n}+ 403/404 replies in {w}s", f.name))
+    l2 = cat["web_fuzz"]["l2"]                       # layer 2: contextual (errors, distinct failing paths, error ratio)
+    for (src, dst, dport), tx in http_groups(f).items():
+        first, st, _peak = http_context(tx, l2["window"], l2["errors"], th.get("web_fuzz.L2.count", l2["count"]), l2["ratio"])
+        if first is not None:
+            ev.append(_ev(first, "L2", "web_fuzz", cat, src, dst, dport, "NATIVE-FUZZ-L2", "Wordlist fuzzing",
+                          f"{st['errors']} errors, {st['paths']} distinct paths, {st['gets']} GETs, ratio {st['ratio']}", f.name))
     seen_ua = set()
     for ts, src, _path, ua in f.http_req:
         if UA_RE.search(ua) and src not in seen_ua:

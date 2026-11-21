@@ -23,7 +23,7 @@ With Docker running and `jasonish/suricata` and `zeek/zeek` pulled, `python -m t
 
 Verified by running it (Suricata 8.0.8, Zeek 9.0.1, Python 3.12, Windows + Docker Desktop):
 
-**Synthetic dataset (39 labelled captures)**
+**Synthetic dataset (46 labelled captures)**
 
 - All captures through Suricata, Zeek and the native detector. All gates pass: 0 false alerts on benign and hard-negative traffic for every sensor, 100% recall on the core attacks, every threshold inside its measured safe band.
 - The three sensors agree on every core attack, and the native detector matches Suricata L1 and Zeek L2 cell for cell on the speed grid.
@@ -49,6 +49,7 @@ Things real testing taught us (all fixed):
 - Fix packs were written with Windows line endings, which broke the nftables file in the Linux victim. They are written with LF now.
 - `PasswordAuthentication no` did not stop SSH guessing: with `UsePAM yes`, keyboard-interactive still accepts passwords. The fix and the playbook now also disable `KbdInteractiveAuthentication`. Found only by re-attacking the live lab.
 - The first web fix hid `/backup` and `/.git` behind a rate limit instead of denying them. The playbook now denies them, and `verify.sh` fuzzes slowly so a rate limit cannot hide a path.
+- Port-scan design ideas taken from a second teammate study, [Port_Scan_Detection_Report.md](Port_Scan_Detection_Report.md). Their controls (30 retries to one closed port, 30 quick web requests) showed our Suricata layer 1 was a pure connection-rate rule and false-alerted, so it moved from 30 to 100 SYNs in 5 s. Their small, mixed and slow scans showed layer 2 at 15 distinct ports was too high, so it moved to 10. Zeek layer 2 now uses their sliding window per source-destination pair, still counts silently dropped probes, and reports how many probes were refused. A 9-port scan is a documented known gap.
 - SMB design ideas taken from a teammate's independent study, [SMB_Detection_Report.md](SMB_Detection_Report.md): allowlist the designated management hosts (a legitimate admin must not alert), record the server's outcome (granted, denied, share missing) instead of relying on successful mappings alone, and document the compromised-admin-host gap.
 
 ## Architecture
@@ -56,7 +57,7 @@ Things real testing taught us (all fixed):
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the diagram and the flow, step by step.
 
 ```
- DATA        Docker lab (real attacks)  +  scapy generator (39 labelled, reproducible PCAPs)
+ DATA        Docker lab (real attacks)  +  scapy generator (46 labelled, reproducible PCAPs)
    |
  SENSORS     Suricata (L1, fast)   Zeek (L2, long window)   native Python plugin     <- all generated from ONE catalog.yml
    |

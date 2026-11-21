@@ -93,7 +93,11 @@ def ev_hidden_paths_exposed(ev: Evidence, src: str, **_):
 
 def ev_attempts_unthrottled(ev: Evidence, src: str, min=20, **_):
     n = ev.ssh_attempts(src)
-    return n >= min, f"{n} SSH connection attempts accepted from {src} without throttling"
+    sm = ev.ssh_auth_summary(src)
+    inferred = bool(sm and (sm["failed_sessions"] or sm["successful_sessions"]))
+    what = (f"{n} inferred password attempts in {sm['failed_sessions']} failed SSH sessions (Zeek estimate)" if inferred
+            else f"{n} SSH connection attempts")
+    return n >= min, f"{what} accepted from {src} without throttling"
 
 
 EVIDENCE_FNS = {"src_outside_mgmt": ev_src_outside_mgmt, "open_ports_exposed": ev_open_ports_exposed,
@@ -108,6 +112,10 @@ def impact(kind: str, ev: Evidence, src: str) -> dict:
         host = _host_confirmed(src)
         if host:
             return {"level": "confirmed", "text": f"Host log confirms an accepted SSH login from {src}: {host}", "source": "host auth.log"}
+        if hit and hit.get("inferred"):
+            return {"level": "probable", "text": (f"Zeek inferred {hit['failed_attempts']} failed password attempts in {hit['failed_sessions']} sessions, "
+                    f"then a successful login on attempt {hit['success_attempts']} (inferred from packet sizes of encrypted SSH; "
+                    "confirm in auth.log)"), "source": ev.source}
         if hit:
             return {"level": "probable", "text": (f"After {hit['failed_before']} short failed sessions, one session lasted "
                     f"{hit['duration_s']} s and moved {hit['bytes']} bytes: the pattern of a successful login "
@@ -132,8 +140,12 @@ def impact(kind: str, ev: Evidence, src: str) -> dict:
         return ({"level": "probable", "text": f"Fuzzing discovered {len(h)} reachable paths: " + ", ".join(u for u, _ in h[:6]), "source": ev.source}
                 if h else {"level": "none", "text": "Fuzzing found nothing reachable", "source": ev.source})
     if kind == "ports_found":
-        op = ev.open_ports(src)
-        return {"level": "probable" if op else "none", "text": f"Scan identified live services on ports {op}" if op else "No live services identified", "source": ev.source}
+        ps = ev.probe_summary(src)
+        op = ps["open"]
+        txt = f"Scan probed {ps['probed']} ports; {len(op)} answered ({', '.join(map(str, op)) or 'none'}), {len(ps['rejected'])} were refused"
+        if ps["filtered"]:
+            txt += f", {len(ps['filtered'])} never answered (silently dropped: a firewall is filtering)"
+        return {"level": "probable" if op else "none", "text": txt, "source": ev.source}
     return {"level": "unknown", "text": "", "source": ev.source}
 
 

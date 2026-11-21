@@ -119,3 +119,62 @@ def test_rca_impact_distinguishes_granted_from_refused():
     ev.add_smb(2, "10.0.1.9", r"\10.0.0.10\C$", "granted")
     assert rca.impact("smb_admin_reached", ev, "10.0.1.9")["level"] == "confirmed"
     assert rca.ev_smb_admin_reached(ev, "10.0.1.9")[0] is True
+
+
+def test_ssh_attempts_prefer_zeeks_inferred_count():
+    ev = Evidence("test")
+    for i in range(5):                                  # 5 connections ...
+        ev.add_conn(i, "10.0.1.9", "10.0.0.10", 22, True, 1.0, 500)
+    assert ev.ssh_attempts("10.0.1.9") == 5             # ... without Zeek: count connections
+    ev.add_ssh_auth(1, "10.0.1.9", False, 13)           # one failed session holding 13 guesses
+    ev.add_ssh_auth(2, "10.0.1.9", False, 12)
+    ev.add_ssh_auth(3, "10.0.1.9", None, 0)             # unknown outcome counts zero
+    assert ev.ssh_attempts("10.0.1.9") == 25
+    sm = ev.ssh_auth_summary("10.0.1.9")
+    assert sm["failed_sessions"] == 2 and sm["unknown_sessions"] == 1
+
+
+def test_ssh_success_after_failures_is_reported_as_inferred():
+    ev = Evidence("test")
+    ev.add_ssh_auth(1, "10.0.1.9", False, 13)
+    ev.add_ssh_auth(2, "10.0.1.9", True, 14)
+    imp = rca.impact("ssh_login_probable", ev, "10.0.1.9")
+    assert imp["level"] == "probable" and "inferred" in imp["text"]
+
+
+def test_rapid_successful_logins_are_not_guessing(tmp_path: Path):
+    c = gen.Cap(8)
+    for i in range(12):
+        gen.ssh_session(c, gen.T0 + i * 2.0, "10.0.2.99", b"SSH-2.0-OpenSSH_9.6\r\n", long_for=1.0)
+    p = tmp_path / "burst.pcap"
+    c.write(p)
+    assert native.detect(native.parse_pcap(p)) == []
+
+
+def _http_pcap(tmp_path, name, reqs, rps=30.0):
+    c = gen.Cap(40)
+    cs = [gen.Conn(c, gen.T0, "10.0.2.88", gen.VICTIM, 80).open() for _ in range(2)]
+    for k, (path, code) in enumerate(reqs):
+        gen.http_get(cs[k % 2].at(gen.T0 + k / rps), path, gen.CHROME_UA, code, 300 if code == 200 else 0)
+    for x in cs:
+        x.close()
+    p = tmp_path / f"{name}.pcap"
+    c.write(p)
+    return native.detect(native.parse_pcap(p))
+
+
+def test_repeated_and_query_errors_are_not_fuzzing(tmp_path: Path):
+    assert _http_pcap(tmp_path, "rep", [("/missing.png", 404)] * 120) == []
+    assert _http_pcap(tmp_path, "qry", [(f"/missing.png?id={i}", 404) for i in range(120)]) == []
+
+
+def test_broken_application_is_not_fuzzing(tmp_path: Path):
+    reqs = [r for i in range(60) for r in (("/", 200), ("/", 200), (f"/missing-{i}.png", 404))]
+    assert _http_pcap(tmp_path, "broken", reqs) == []
+
+
+def test_http_thresholds_are_inclusive_and_independent(tmp_path: Path):
+    assert _http_pcap(tmp_path, "b49", [(f"/t-{i}", 404) for i in range(49)]) == []                  # 49 errors
+    assert _http_pcap(tmp_path, "b24", [(f"/t-{i % 24}", 404) for i in range(50)]) == []             # 24 distinct paths
+    ev = _http_pcap(tmp_path, "b25", [(f"/t-{i % 25}", 404) for i in range(50)])                     # exactly 50 / 25
+    assert {e["layer"] for e in ev} == {"L2"} and ev[0]["class"] == "web_fuzz"

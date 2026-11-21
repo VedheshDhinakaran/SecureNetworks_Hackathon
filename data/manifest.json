@@ -358,6 +358,267 @@
   "desc": "An attacker who has compromised the designated admin host: allowlisted by design, invisible (known gap)"
  },
  {
+  "name": "hn_http_repeated_404",
+  "file": "hn_http_repeated_404.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251609.921466,
+  "duration": 9.9,
+  "packets": 492,
+  "desc": "120 requests for ONE missing image: many errors, one path"
+ },
+ {
+  "name": "hn_http_query_404",
+  "file": "hn_http_query_404.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251609.921466,
+  "duration": 9.9,
+  "packets": 492,
+  "desc": "120 requests for one missing image with a changing query string: many raw URLs, one real path"
+ },
+ {
+  "name": "hn_http_broken_app",
+  "file": "hn_http_broken_app.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251609.9492438,
+  "duration": 9.9,
+  "packets": 732,
+  "desc": "A broken application: 60 missing assets mixed with 120 successful requests (error ratio 0.33)"
+ },
+ {
+  "name": "hn_http_boundary_24paths",
+  "file": "hn_http_boundary_24paths.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251601.6381328,
+  "duration": 1.6,
+  "packets": 212,
+  "desc": "50 errors spread over only 24 distinct paths: one path short of the threshold"
+ },
+ {
+  "name": "ev_http_boundary25",
+  "file": "ev_http_boundary25.pcap",
+  "kind": "evasion",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.1.92"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251601.6381328,
+  "duration": 1.6,
+  "packets": 212,
+  "desc": "50 errors over exactly 25 distinct paths: the smallest scan the contextual rule accepts"
+ },
+ {
+  "name": "ev_http_fuzz50",
+  "file": "ev_http_fuzz50.pcap",
+  "kind": "evasion",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.1.93"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251601.6381328,
+  "duration": 1.6,
+  "packets": 212,
+  "desc": "A small 50-path wordlist scan: too few requests for the fast layer, caught by the contextual layer"
+ },
+ {
+  "name": "ev_http_boundary49",
+  "file": "ev_http_boundary49.pcap",
+  "kind": "evasion",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.1.94"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251601.6047993,
+  "duration": 1.6,
+  "packets": 208,
+  "desc": "49 distinct failing paths: one below the error threshold (known gap)"
+ },
+ {
+  "name": "ev_http_padded",
+  "file": "ev_http_padded.pcap",
+  "kind": "evasion",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.1.95"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251609.9492438,
+  "duration": 9.9,
+  "packets": 732,
+  "desc": "A wordlist scan padded with successful requests (error ratio 0.33): identical in shape to a broken application (known gap)"
+ },
+ {
+  "name": "ev_http_small5",
+  "file": "ev_http_small5.pcap",
+  "kind": "evasion",
+  "expect": [
+   "web_fuzz"
+  ],
+  "attacker_ips": [
+   "10.0.1.96"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251600.1381328,
+  "duration": 0.1,
+  "packets": 32,
+  "desc": "A five-path probe: below any sensible volume threshold (known gap)"
+ },
+ {
+  "name": "hn_ssh_login_burst",
+  "file": "hn_ssh_login_burst.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251623.7116425,
+  "duration": 23.7,
+  "packets": 288,
+  "desc": "A script or a busy admin logs in successfully 12 times in 24 s: many connections, none failed"
+ },
+ {
+  "name": "ev_small_scan",
+  "file": "ev_small_scan.pcap",
+  "kind": "evasion",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.1.81"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251600.6504002,
+  "duration": 0.7,
+  "packets": 28,
+  "desc": "Quick 14-port connect scan: too few probes for the fast layer, still above the port-cardinality threshold"
+ },
+ {
+  "name": "ev_mixed_scan",
+  "file": "ev_mixed_scan.pcap",
+  "kind": "evasion",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.1.82"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251600.7004,
+  "duration": 0.7,
+  "packets": 33,
+  "desc": "Mixed scan: 12 closed ports plus 3 open ones (a rejection-only detector sees just 12)"
+ },
+ {
+  "name": "ev_slow_scan_10",
+  "file": "ev_slow_scan_10.pcap",
+  "kind": "evasion",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.1.83"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251672.0004,
+  "duration": 72.0,
+  "packets": 20,
+  "desc": "Slow 10-port scan, one probe every 8 s (82 s total): needs a 5-minute window and a threshold of 10"
+ },
+ {
+  "name": "ev_tiny_scan_9",
+  "file": "ev_tiny_scan_9.pcap",
+  "kind": "evasion",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.1.84"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251600.4004002,
+  "duration": 0.4,
+  "packets": 18,
+  "desc": "Nine-port scan, one below the threshold: a documented false negative (known gap)"
+ },
+ {
+  "name": "ev_filtered_scan",
+  "file": "ev_filtered_scan.pcap",
+  "kind": "evasion",
+  "expect": [
+   "scan"
+  ],
+  "attacker_ips": [
+   "10.0.1.85"
+  ],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251600.975,
+  "duration": 1.0,
+  "packets": 40,
+  "desc": "Scan of a firewalled target: every probe is silently dropped, no rejection ever appears"
+ },
+ {
+  "name": "hn_connection_retries",
+  "file": "hn_connection_retries.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251601.4504,
+  "duration": 1.5,
+  "packets": 60,
+  "desc": "A client retries a closed port 30 times in 1.5 s (service outage): many connections, one port"
+ },
+ {
+  "name": "hn_rapid_web_requests",
+  "file": "hn_rapid_web_requests.pcap",
+  "kind": "hardneg",
+  "expect": [],
+  "attacker_ips": [],
+  "attack_start": 1795251600.0,
+  "start": 1795251600.0,
+  "end": 1795251602.037199,
+  "duration": 2.0,
+  "packets": 300,
+  "desc": "A script makes 30 separate web requests in 2 s: many connections, one port"
+ },
+ {
   "name": "grid_scan_500",
   "file": "grid_scan_500.pcap",
   "kind": "grid",
@@ -365,13 +626,13 @@
    "scan"
   ],
   "attacker_ips": [
-   "10.0.4.32"
+   "10.0.4.49"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
-  "end": 1795251600.1184,
-  "duration": 0.1,
-  "packets": 121,
+  "end": 1795251600.5984,
+  "duration": 0.6,
+  "packets": 603,
   "desc": "scan at 500 events/s",
   "rate": 500
  },
@@ -383,13 +644,13 @@
    "scan"
   ],
   "attacker_ips": [
-   "10.0.4.33"
+   "10.0.4.50"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
-  "end": 1795251601.1804001,
-  "duration": 1.2,
-  "packets": 121,
+  "end": 1795251605.9804,
+  "duration": 6.0,
+  "packets": 603,
   "desc": "scan at 50 events/s",
   "rate": 50
  },
@@ -401,13 +662,13 @@
    "scan"
   ],
   "attacker_ips": [
-   "10.0.4.34"
+   "10.0.4.51"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
-  "end": 1795251611.8004,
-  "duration": 11.8,
-  "packets": 121,
+  "end": 1795251659.8004,
+  "duration": 59.8,
+  "packets": 603,
   "desc": "scan at 5 events/s",
   "rate": 5
  },
@@ -419,7 +680,7 @@
    "scan"
   ],
   "attacker_ips": [
-   "10.0.4.35"
+   "10.0.4.52"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
@@ -437,7 +698,7 @@
    "scan"
   ],
   "attacker_ips": [
-   "10.0.4.36"
+   "10.0.4.53"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
@@ -448,22 +709,22 @@
   "rate": 0.1
  },
  {
-  "name": "grid_scan_0.03",
-  "file": "grid_scan_0.03.pcap",
+  "name": "grid_scan_0.02",
+  "file": "grid_scan_0.02.pcap",
   "kind": "grid",
   "expect": [
    "scan"
   ],
   "attacker_ips": [
-   "10.0.4.37"
+   "10.0.4.54"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
-  "end": 1795253566.6670668,
-  "duration": 1966.7,
+  "end": 1795254550.0004,
+  "duration": 2950.0,
   "packets": 121,
-  "desc": "scan at 0.03 events/s",
-  "rate": 0.03
+  "desc": "scan at 0.02 events/s",
+  "rate": 0.02
  },
  {
   "name": "grid_ssh_bruteforce_2",
@@ -473,7 +734,7 @@
    "ssh_bruteforce"
   ],
   "attacker_ips": [
-   "10.0.4.38"
+   "10.0.4.55"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
@@ -491,7 +752,7 @@
    "ssh_bruteforce"
   ],
   "attacker_ips": [
-   "10.0.4.39"
+   "10.0.4.56"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
@@ -509,7 +770,7 @@
    "ssh_bruteforce"
   ],
   "attacker_ips": [
-   "10.0.4.40"
+   "10.0.4.57"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
@@ -527,7 +788,7 @@
    "ssh_bruteforce"
   ],
   "attacker_ips": [
-   "10.0.4.41"
+   "10.0.4.58"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
@@ -545,7 +806,7 @@
    "ssh_bruteforce"
   ],
   "attacker_ips": [
-   "10.0.4.42"
+   "10.0.4.59"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
@@ -563,7 +824,7 @@
    "web_fuzz"
   ],
   "attacker_ips": [
-   "10.0.4.43"
+   "10.0.4.60"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
@@ -581,7 +842,7 @@
    "web_fuzz"
   ],
   "attacker_ips": [
-   "10.0.4.44"
+   "10.0.4.61"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
@@ -599,7 +860,7 @@
    "web_fuzz"
   ],
   "attacker_ips": [
-   "10.0.4.45"
+   "10.0.4.62"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
@@ -617,7 +878,7 @@
    "web_fuzz"
   ],
   "attacker_ips": [
-   "10.0.4.46"
+   "10.0.4.63"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
@@ -635,7 +896,7 @@
    "web_fuzz"
   ],
   "attacker_ips": [
-   "10.0.4.47"
+   "10.0.4.64"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,
@@ -653,7 +914,7 @@
    "web_fuzz"
   ],
   "attacker_ips": [
-   "10.0.4.48"
+   "10.0.4.65"
   ],
   "attack_start": 1795251600.0,
   "start": 1795251600.0,

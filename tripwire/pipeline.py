@@ -11,6 +11,7 @@ from . import harness, rca, respond, validate
 from .config import CLASSES, OUT, PCAPS, ensure_dirs, load_catalog
 from .correlate import correlate
 from .gen import load_manifest
+from . import real
 from .rules import build_rules, lint_checks
 
 
@@ -47,7 +48,10 @@ def run(requested: list[str] | None = None, force: bool = False, canary: bool = 
     col = harness.collect(engines, man)
     sc = harness.score(col, man, engines)
     sw = harness.sweep(man)
-    gate = harness.gate(sc, sw, engines) + lint_checks()
+    log("Real-lab captures ...")
+    real_rows = real.evaluate(engines, run=True, log=log)
+    ssh_att = real.ssh_attempt_sweep(real_rows)
+    gate = harness.gate(sc, sw, engines) + lint_checks() + real.gate_checks(real_rows, ssh_att, engines)
 
     # incidents from every attack-like capture, merged across sensors
     events = [x for m in man if m["kind"] in ("attack", "chain", "evasion") for e in engines for x in col[m["name"]][e]]
@@ -88,7 +92,7 @@ def run(requested: list[str] | None = None, force: bool = False, canary: bool = 
         "score": sc, "agreement": harness.agreement(col, man, engines), "gate": gate, "sweep": sw,
         "grid": harness.robustness_grid(col, man, engines), "evasion": harness.evasion_matrix(col, man, engines),
         "coverage": coverage(sc, engines), "incidents": incidents, "rca": rcas, "response": plan, "health": health,
-        "alerts": events[-500:],
+        "alerts": events[-500:], "real": real_rows, "ssh_attempt_sweep": ssh_att,
     }
     OUT.mkdir(exist_ok=True)
     (OUT / "state.json").write_text(json.dumps(state, indent=1, default=str), encoding="utf-8")

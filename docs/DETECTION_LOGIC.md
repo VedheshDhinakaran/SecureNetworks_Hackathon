@@ -16,13 +16,14 @@ Generated from `detections/catalog.yml`. Two layers: **L1** (Suricata, short win
 ## Port scanning / service discovery (T1046 Network Service Discovery)
 
 - **Tactic:** Discovery (TA0007)
-- **What is observed:** One source sends many TCP SYNs, to many different ports.
-- **Why it indicates the behavior:** A scanner probes a large port range quickly. Legitimate clients talk to a few well-known ports.
-- **Layer 1 threshold:** 30 events within 5 s (Suricata sid 1000001)
-- **Layer 2 threshold:** 15 events within 300 s (Zeek script)
-- **Known evasion:** nmap -T1 style slow scanning stays under the short window. Layer 2 counts distinct ports over 5 minutes instead.
+- **What is observed:** One source sends TCP connection attempts to many DIFFERENT ports of one target, answered or not (rejected, open or silently dropped).
+- **Why it indicates the behavior:** A scanner probes a port range. Legitimate clients talk to a few well-known ports, and repeated attempts to one port (retries, busy web clients) do not raise the distinct-port count.
+- **Layer 1 threshold:** 100 events within 5 s (Suricata sid 1000001)
+- **Layer 2 threshold:** 10 events within 300 s (Zeek script)
+- **Known evasion:** A slow scan stays under the short window; layer 2 counts distinct ports over a sliding 5 minutes. Fewer than 10 distinct ports (for example a 9-port scan) stays below the threshold (known gap), as does a scan slower than 10 ports per 5 minutes or one spread over many sources.
 - **D3FEND:** Connection Attempt Analysis, Network Traffic Analysis
 - **Mitigations:** Network Intrusion Prevention (M1031), Filter Network Traffic (M1037)
+- **Tuning note:** Layer 2 started at 15 and missed a quick 14-port scan and a slow 10-port scan; the sweep put the safe band at 7-10 and we chose 10, matching the independent lab study in Port_Scan_Detection_Report.md. Layer 1 started at 30 and false-alerted on 30 rapid connections to ONE port (retries, a busy script); the safe band became 31-1000 and we chose 100.
 
 ## SSH password guessing (T1110.001 Password Guessing)
 

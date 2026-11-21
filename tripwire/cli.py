@@ -109,6 +109,21 @@ def cmd_serve(a) -> int:
     return 0
 
 
+def cmd_real(_a) -> int:
+    """Score every real Docker-lab capture against its ground truth."""
+    from . import real
+    av = eng.availability()
+    engines = ["native"] + [e for e in ("suricata", "zeek") if av.get(e) == "ok"]
+    rows = real.evaluate(engines)
+    if not rows:
+        print("no real captures found (record them with the Docker lab; see lab/ssh_suite.sh)")
+        return 1
+    print(real.table(rows))
+    bad = [r["name"] for r in rows if not r["ok"]]
+    print(f"\n{len(rows) - len(bad)}/{len(rows)} real captures behave as expected" + (f"; check: {', '.join(bad)}" if bad else ""))
+    return 1 if bad else 0
+
+
 def cmd_analyze(a) -> int:
     """Analyse real captures (for example the Docker lab's data/real_pcaps) with every available sensor."""
     from pathlib import Path
@@ -175,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--speed", type=float, default=30.0, help="replay clock speed-up")
     p.add_argument("--only", nargs="*", help="replay only these captures, e.g. attack_chain")
     p.set_defaults(fn=cmd_serve)
+    sub.add_parser("real", help="score the real Docker-lab captures against their ground truth").set_defaults(fn=cmd_real)
     p = sub.add_parser("analyze", help="detect, correlate and explain real captures in a folder")
     p.add_argument("dir", nargs="?", default="data/real_pcaps")
     p.set_defaults(fn=cmd_analyze)
